@@ -4,6 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gpsntp
+      args:
+        CHRONY_UID: "${CHRONY_UID:?Set CHRONY_UID in .env}"
+        CHRONY_GID: "${CHRONY_GID:?Set CHRONY_GID in .env}"
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -23,6 +26,8 @@ services:
       NTP_SERVERS: "${NTP_SERVERS:?Set NTP_SERVERS in .env}"
       NTP_SOURCE_TYPE: "${NTP_SOURCE_TYPE:?Set NTP_SOURCE_TYPE in .env}"
       NTP_ALLOW: "${NTP_ALLOW?Set NTP_ALLOW in .env}"
+      CHRONY_UID: "${CHRONY_UID}"
+      CHRONY_GID: "${CHRONY_GID}"
       LOG_LEVEL: "${LOG_LEVEL:?Set LOG_LEVEL in .env}"
       TZ: "${TZ:?Set TZ in .env}"
       NOCLIENTLOG: "${NOCLIENTLOG:?Set NOCLIENTLOG in .env}"

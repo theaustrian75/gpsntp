@@ -14,6 +14,8 @@ NTP_ALLOW="${NTP_ALLOW-all}"
 DEV_PPS="${DEV_PPS:-}"
 DEV_TTY="${DEV_TTY:-}"
 DEV_PTP="${DEV_PTP:-${DEFAULT_PTP}}"
+CHRONY_UID="${CHRONY_UID:-108}"
+CHRONY_GID="${CHRONY_GID:-20}"
 LOG_LEVEL="${LOG_LEVEL:-0}"
 TZ="${TZ:-UTC}"
 ENABLE_NTS="${ENABLE_NTS:-false}"
@@ -26,6 +28,19 @@ GPS_PREFER="${GPS_PREFER:-true}"
 NMEA_OFFSET="${NMEA_OFFSET:-0.5}"
 NMEA_DELAY="${NMEA_DELAY:-0.1}"
 PTP_OFFSET="${PTP_OFFSET:-0}"
+
+for variable in CHRONY_UID CHRONY_GID; do
+  value="${!variable}"
+  if [[ ! "${value}" =~ ^[0-9]+$ || "${value}" == "0" ]]; then
+    echo "${variable} must be a non-zero numeric ID" >&2
+    exit 1
+  fi
+done
+
+if [[ "$(id -u chrony)" != "${CHRONY_UID}" || "$(id -g chrony)" != "${CHRONY_GID}" ]]; then
+  echo "Chrony account does not match ${CHRONY_UID}:${CHRONY_GID}; rebuild the image with matching build arguments" >&2
+  exit 1
+fi
 
 for variable in ENABLE_NTS ENABLE_SYSCLK NOCLIENTLOG ENABLE_GPSD_SOCK ENABLE_KERNEL_PPS ENABLE_PTP GPS_PREFER; do
   value="${!variable}"
@@ -64,7 +79,7 @@ done
 
 # Confirm correct permissions on chrony runtime and state directories
 mkdir -p /etc/chrony /run/chrony /var/lib/chrony
-chown chrony:chrony /run/chrony /var/lib/chrony
+chown "${CHRONY_UID}:${CHRONY_GID}" /run/chrony /var/lib/chrony
 chmod 0750 /run/chrony
 
 # Remove a stale PID file left by an unclean shutdown

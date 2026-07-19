@@ -50,6 +50,8 @@ defaults. Use a host firewall even when Chrony access is restricted.
   `ratelimit\nrtcsync`.
 - `NTP_ALLOW`: client network, `all`, or empty to disable clients; defaults
   to `all`.
+- `CHRONY_UID` / `CHRONY_GID`: numeric Chrony service identity compiled into
+  the image; defaults to `108:20`.
 - `DEV_TTY`: GPS serial device basename; auto-detects `ttyAMA0`.
 - `DEV_PPS`: PPS device basename; auto-detects `pps0`.
 - `ENABLE_GPSD_SOCK`: use GPSD's high-precision SOCK source; defaults to
@@ -130,6 +132,25 @@ Chrony with `TZ=UTC` to keep that behavior unambiguous. The configured `TZ` is
 validated against the installed IANA timezone database and applies to other
 container tools. Convert Chrony timestamps in the log viewer when local-time
 display is required.
+
+### Service identity
+
+The image runs Chrony as UID 108 and GID 20 by default. Alpine assigns GID 20
+to `dialout`, which provides the expected serial-device group identity. The
+published GHCR image uses these defaults.
+
+UID and GID are build-time settings because Chrony drops privileges through
+the named `chrony` account. To use different IDs, update `CHRONY_UID` and
+`CHRONY_GID` in `.env`, then rebuild:
+
+```bash
+docker compose build --pull
+docker compose up -d
+```
+
+Compose passes the same values to the container. Startup rejects an identity
+mismatch with a rebuild instruction instead of silently applying incorrect
+volume ownership.
 
 ## Health check
 

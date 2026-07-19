@@ -35,6 +35,8 @@ jobs:
           docker compose --env-file .env.example config --format json > /tmp/compose-config.json
           jq -e '
             .services.chrony.build.dockerfile == "Dockerfile.gpsntp"
+            and .services.chrony.build.args.CHRONY_UID == "108"
+            and .services.chrony.build.args.CHRONY_GID == "20"
             and .services.chrony.read_only == true
             and .services.chrony.network_mode == "host"
             and any(.services.chrony.cap_add[]; . == "SYS_TIME")
@@ -53,6 +55,11 @@ jobs:
 
       - name: Build image
         run: docker build --tag gpsntp:test --file Dockerfile.gpsntp .
+
+      - name: Validate Chrony account identity
+        run: |
+          docker run --rm --entrypoint sh gpsntp:test -c \
+            'test "$(id -u chrony)" = 108 && test "$(id -g chrony)" = 20'
 
       - name: Validate startup script in image
         run: docker run --rm --entrypoint bash gpsntp:test -n /usr/local/bin/startup
