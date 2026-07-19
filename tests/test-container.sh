@@ -105,7 +105,7 @@ assert_failure "Invalid NTP_ALLOW network" \
 docker run -d --name "$CONTAINER" \
   --read-only \
   --security-opt no-new-privileges:true \
-  --cap-drop ALL \
+  --cap-drop ALL --cap-add CHOWN \
   --pids-limit 128 --memory 256m \
   --tmpfs /etc/chrony:rw,mode=1750 \
   --tmpfs /run:rw,mode=0755 \
