@@ -1,0 +1,35 @@
+FROM alpine:3.24.1
+
+LABEL org.opencontainers.image.authors="admin@klausk.xyz"
+
+# Default configuration
+ENV NTP_DIRECTIVES="ratelimit\nrtcsync" \
+    TZ="America/New_York"
+
+# Install chrony, GPS, PPS, and timezone support
+RUN apk add --no-cache \
+        bash \
+        chrony \
+        gpsd \
+        gpsd-clients \
+        pps-tools \
+        py3-gpsd \
+        py3-pyserial \
+        tzdata \
+    && rm -f /etc/chrony/chrony.conf
+
+# Configure and start GPSD and chrony
+COPY --chmod=0755 assets/startup.sh /usr/local/bin/startup
+
+# NTP port
+EXPOSE 123/udp
+
+# Persist chrony's clock-drift data
+VOLUME ["/var/lib/chrony"]
+
+# Test whether chrony has synchronized to a usable time source
+HEALTHCHECK --interval=30s --timeout=5s --start-period=2m --retries=5 \
+    CMD ["chronyc", "waitsync", "1"]
+
+# Start GPSD and chrony
+ENTRYPOINT ["/usr/local/bin/startup"]

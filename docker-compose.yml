@@ -1,0 +1,27 @@
+services:
+  chrony:
+    image: ghcr.io/theaustrian75/gpsntp:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.gpsntp
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /etc/chrony:rw,mode=1750
+      - /run/chrony:rw,mode=1750
+      - /var/lib/chrony:rw,mode=1750
+    network_mode: host
+    cap_add:
+      - SYS_TIME
+    devices:
+      - /dev/ttyAMA0:/dev/ttyAMA0:rw
+      - /dev/pps0:/dev/pps0:rw
+      - /dev/ptp0:/dev/ptp0:rw
+    environment:
+      - "NTP_SERVERS=time.cloudflare.com,time.apple.com,time.google.com"
+      - NTP_ALLOW=${NTP_ALLOW:-all}
+      - LOG_LEVEL=0
+      - TZ=America/New_York
+      - NOCLIENTLOG=false
+      - ENABLE_NTS=false
+      - ENABLE_SYSCLK=true
