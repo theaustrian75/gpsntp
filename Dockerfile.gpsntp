@@ -13,8 +13,6 @@ RUN apk add --no-cache \
         gpsd \
         gpsd-clients \
         pps-tools \
-        py3-gpsd \
-        py3-pyserial \
         tzdata \
     && rm -f /etc/chrony/chrony.conf
 

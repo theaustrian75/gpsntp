@@ -5,15 +5,64 @@ set -Eeuo pipefail
 readonly DEFAULT_NTP="0.pool.ntp.org,1.pool.ntp.org,2.pool.ntp.org,3.pool.ntp.org"
 readonly DEFAULT_PPS="pps0"
 readonly DEFAULT_TTY="ttyAMA0"
+readonly DEFAULT_PTP="ptp0"
 readonly CHRONY_CONF_FILE="/etc/chrony/chrony.conf"
 
 NTP_SERVERS="${NTP_SERVERS:-${DEFAULT_NTP}}"
+NTP_SOURCE_TYPE="${NTP_SOURCE_TYPE:-pool}"
 NTP_ALLOW="${NTP_ALLOW-all}"
 DEV_PPS="${DEV_PPS:-}"
 DEV_TTY="${DEV_TTY:-}"
+DEV_PTP="${DEV_PTP:-${DEFAULT_PTP}}"
 LOG_LEVEL="${LOG_LEVEL:-0}"
+TZ="${TZ:-UTC}"
+ENABLE_NTS="${ENABLE_NTS:-false}"
+ENABLE_SYSCLK="${ENABLE_SYSCLK:-false}"
+NOCLIENTLOG="${NOCLIENTLOG:-false}"
+ENABLE_GPSD_SOCK="${ENABLE_GPSD_SOCK:-true}"
+ENABLE_KERNEL_PPS="${ENABLE_KERNEL_PPS:-false}"
+ENABLE_PTP="${ENABLE_PTP:-false}"
+GPS_PREFER="${GPS_PREFER:-true}"
+NMEA_OFFSET="${NMEA_OFFSET:-0.5}"
+NMEA_DELAY="${NMEA_DELAY:-0.1}"
+PTP_OFFSET="${PTP_OFFSET:-0}"
 
-# confirm correct permissions on chrony run directory
+for variable in ENABLE_NTS ENABLE_SYSCLK NOCLIENTLOG ENABLE_GPSD_SOCK ENABLE_KERNEL_PPS ENABLE_PTP GPS_PREFER; do
+  value="${!variable}"
+  if [[ "${value}" != "true" && "${value}" != "false" ]]; then
+    echo "${variable} must be true or false" >&2
+    exit 1
+  fi
+done
+
+if [[ "${TZ}" == /* || "${TZ}" == *".."* || ! "${TZ}" =~ ^[A-Za-z0-9._+/-]+$ || ! -f "/usr/share/zoneinfo/${TZ}" ]]; then
+  echo "TZ must name an installed IANA timezone" >&2
+  exit 1
+fi
+export TZ
+
+if [[ "${ENABLE_GPSD_SOCK}" == "true" && "${ENABLE_KERNEL_PPS}" == "true" ]]; then
+  echo "ENABLE_GPSD_SOCK and ENABLE_KERNEL_PPS cannot both be true" >&2
+  exit 1
+fi
+
+case "${NTP_SOURCE_TYPE}" in
+  pool|server) ;;
+  *)
+    echo "NTP_SOURCE_TYPE must be pool or server" >&2
+    exit 1
+    ;;
+esac
+
+for variable in NMEA_OFFSET NMEA_DELAY PTP_OFFSET; do
+  value="${!variable}"
+  if [[ ! "${value}" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; then
+    echo "${variable} must be a number" >&2
+    exit 1
+  fi
+done
+
+# Confirm correct permissions on chrony runtime and state directories
 mkdir -p /etc/chrony /run/chrony /var/lib/chrony
 chown chrony:chrony /run/chrony /var/lib/chrony
 chmod 0750 /run/chrony
@@ -31,8 +80,8 @@ rm -f /run/chrony/chronyd.pid
   echo "# time servers provided by the NTP_SERVERS environment variable."
 } > "${CHRONY_CONF_FILE}"
 
-# Figure out which hardware devices we can use
-for device in "${DEV_PPS}" "${DEV_TTY}"; do
+# Validate hardware device basenames
+for device in "${DEV_PPS}" "${DEV_TTY}" "${DEV_PTP}"; do
   if [[ -n "${device}" && ! "${device}" =~ ^[A-Za-z0-9._-]+$ ]]; then
     echo "Invalid device name '${device}'; provide a basename under /dev" >&2
     exit 1
@@ -52,6 +101,23 @@ if [[ -z "${DEV_TTY}" && -e "/dev/${DEFAULT_TTY}" ]]; then
   echo "Using /dev/${DEV_TTY}"
 elif [[ -n "${DEV_TTY}" && ! -e "/dev/${DEV_TTY}" ]]; then
   echo "TTY: /dev/${DEV_TTY} does not exist"
+  exit 1
+fi
+
+if [[ "${ENABLE_GPSD_SOCK}" == "true" && -z "${DEV_TTY}" ]]; then
+  echo "ENABLE_GPSD_SOCK requires DEV_TTY" >&2
+  exit 1
+fi
+
+if [[ "${ENABLE_KERNEL_PPS}" == "true" ]]; then
+  if [[ -z "${DEV_TTY}" || -z "${DEV_PPS}" ]]; then
+    echo "ENABLE_KERNEL_PPS requires DEV_TTY and DEV_PPS" >&2
+    exit 1
+  fi
+fi
+
+if [[ "${ENABLE_PTP}" == "true" && ! -e "/dev/${DEV_PTP}" ]]; then
+  echo "PTP: /dev/${DEV_PTP} does not exist" >&2
   exit 1
 fi
 
@@ -81,30 +147,42 @@ for server in "${ntp_servers[@]}"; do
     echo "server ${server}" >> "${CHRONY_CONF_FILE}"
     echo "local stratum 10" >> "${CHRONY_CONF_FILE}"
   else
-    if [[ "${ENABLE_NTS:-false}" == "true" ]]; then
-      echo "server ${server} iburst nts" >> "${CHRONY_CONF_FILE}"
-    else
-      echo "server ${server} iburst" >> "${CHRONY_CONF_FILE}"
+    source_options=(iburst)
+    if [[ "${NTP_SOURCE_TYPE}" == "pool" ]]; then
+      # Select one source from each numbered pool hostname.
+      source_options+=(maxsources 1)
     fi
+    if [[ "${ENABLE_NTS}" == "true" ]]; then
+      source_options+=(nts)
+    fi
+    echo "${NTP_SOURCE_TYPE} ${server} ${source_options[*]}" >> "${CHRONY_CONF_FILE}"
   fi
 done
 
 # Set up GPS time sources
-# - PPS is the most accurate (nanoseconds)
-# - SHM 0 from gpsd is the NMEA data at 4800bps, so it is not very accurate
-# - SOCK protocol includes PPS data and provides time within a few ns
-if [[ -n "${DEV_PPS}" ]]; then
-  echo "refclock PPS /dev/${DEV_PPS} refid PPS poll 0 delay 0.0 filter 80 precision 1e-9" >> "${CHRONY_CONF_FILE}"
+# Prefer GPSD's SOCK source, which can apply receiver-specific PPS corrections.
+# Direct kernel PPS is an alternative and is locked to GPSD's NMEA source.
+gpsd_socket=""
+if [[ "${ENABLE_GPSD_SOCK}" == "true" ]]; then
+  gpsd_socket="/run/chrony.${DEV_TTY}.sock"
+  gps_options=(refid GPS precision 1e-7 poll 0)
+  if [[ "${GPS_PREFER}" == "true" ]]; then
+    gps_options+=(prefer)
+  fi
+  echo "refclock SOCK ${gpsd_socket} ${gps_options[*]}" >> "${CHRONY_CONF_FILE}"
+elif [[ "${ENABLE_KERNEL_PPS}" == "true" ]]; then
+  gpsd_socket="/run/chrony.clk.${DEV_TTY}.sock"
+  echo "refclock SOCK ${gpsd_socket} offset ${NMEA_OFFSET} delay ${NMEA_DELAY} refid NMEA poll 0 noselect" >> "${CHRONY_CONF_FILE}"
+  pps_options=(lock NMEA refid PPS precision 1e-7 poll 0)
+  if [[ "${GPS_PREFER}" == "true" ]]; then
+    pps_options+=(prefer)
+  fi
+  echo "refclock PPS /dev/${DEV_PPS} ${pps_options[*]}" >> "${CHRONY_CONF_FILE}"
 fi
 
-if [[ -n "${DEV_TTY}" ]]; then
-  echo "refclock SHM 0 precision 1e-1 offset 0.628 delay 0.5 refid UBLX noselect" >> "${CHRONY_CONF_FILE}"
-  echo "refclock SOCK /var/run/chrony.${DEV_TTY}.sock poll 0 delay 0.0 refid SOCK" >> "${CHRONY_CONF_FILE}"
-fi
-
-# PTP0 configuration: if it has been passed through, it means we want to use it
-if [[ -e /dev/ptp0 ]]; then
-  echo "refclock PHC /dev/ptp0 poll 3 dpoll -2 stratum 2" >> "${CHRONY_CONF_FILE}"
+# PTP is opt-in because an arbitrary PHC may be free-running or use TAI.
+if [[ "${ENABLE_PTP}" == "true" ]]; then
+  echo "refclock PHC /dev/${DEV_PTP} poll 3 dpoll -2 offset ${PTP_OFFSET} stratum 2" >> "${CHRONY_CONF_FILE}"
 fi
 
 # Add the final configuration directives
@@ -115,7 +193,7 @@ fi
   if [[ -n "${NTP_DIRECTIVES:-}" ]]; then
     printf '%b\n' "${NTP_DIRECTIVES}"
   fi
-  if [[ "${NOCLIENTLOG:-false}" == "true" ]]; then
+  if [[ "${NOCLIENTLOG}" == "true" ]]; then
     echo "noclientlog"
   fi
 
@@ -131,8 +209,11 @@ fi
   fi
 } >> "${CHRONY_CONF_FILE}"
 
-chronyd_args=(-u chrony -d -L "${LOG_LEVEL}")
-if [[ "${ENABLE_SYSCLK:-false}" != "true" ]]; then
+# Validate the generated configuration before starting either daemon.
+/usr/sbin/chronyd -p -f "${CHRONY_CONF_FILE}" >/dev/null
+
+chronyd_args=(-u chrony -d -L "${LOG_LEVEL}" -f "${CHRONY_CONF_FILE}")
+if [[ "${ENABLE_SYSCLK}" != "true" ]]; then
   # Disable system-clock control unless explicitly enabled.
   chronyd_args+=(-x)
 fi
@@ -147,17 +228,37 @@ terminate() {
 }
 trap terminate TERM INT
 
-if [[ -n "${DEV_TTY}" ]]; then
+# Chrony creates the refclock socket, so it must start before GPSD.
+# Chrony timestamps are defined in UTC; TZ applies to other container tools.
+TZ=UTC /usr/sbin/chronyd "${chronyd_args[@]}" &
+chronyd_pid="$!"
+pids+=("${chronyd_pid}")
+
+if [[ -n "${gpsd_socket}" ]]; then
+  for _ in {1..50}; do
+    [[ -S "${gpsd_socket}" ]] && break
+    if ! kill -0 "${chronyd_pid}" 2>/dev/null; then
+      wait "${chronyd_pid}" || true
+      echo "chronyd exited before creating ${gpsd_socket}" >&2
+      exit 1
+    fi
+    sleep 0.1
+  done
+
+  if [[ ! -S "${gpsd_socket}" ]]; then
+    echo "chronyd did not create ${gpsd_socket}" >&2
+    terminate
+    wait "${chronyd_pid}" 2>/dev/null || true
+    exit 1
+  fi
+
   gpsd_devices=("/dev/${DEV_TTY}")
-  if [[ -n "${DEV_PPS}" ]]; then
+  if [[ "${ENABLE_GPSD_SOCK}" == "true" && -n "${DEV_PPS}" ]]; then
     gpsd_devices+=("/dev/${DEV_PPS}")
   fi
-  /usr/sbin/gpsd -rnbN "${gpsd_devices[@]}" &
+  /usr/sbin/gpsd -nbN "${gpsd_devices[@]}" &
   pids+=("$!")
 fi
-
-/usr/sbin/chronyd "${chronyd_args[@]}" &
-pids+=("$!")
 
 # If either daemon exits, stop the other and return the first exit status.
 status=0

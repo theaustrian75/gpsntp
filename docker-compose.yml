@@ -8,20 +8,36 @@ services:
     read_only: true
     tmpfs:
       - /etc/chrony:rw,mode=1750
-      - /run/chrony:rw,mode=1750
-      - /var/lib/chrony:rw,mode=1750
+      # Chrony and GPSD create sockets directly under /run.
+      - /run:rw,mode=0755
+    volumes:
+      - chrony-data:/var/lib/chrony
     network_mode: host
     cap_add:
       - SYS_TIME
     devices:
-      - /dev/ttyAMA0:/dev/ttyAMA0:rw
-      - /dev/pps0:/dev/pps0:rw
-      - /dev/ptp0:/dev/ptp0:rw
+      - "/dev/${DEV_TTY:?Set DEV_TTY in .env}:/dev/${DEV_TTY}:rw"
+      - "/dev/${DEV_PPS:?Set DEV_PPS in .env}:/dev/${DEV_PPS}:rw"
+      # Add a DEV_PTP mapping here only when ENABLE_PTP=true.
     environment:
       NTP_SERVERS: "${NTP_SERVERS:?Set NTP_SERVERS in .env}"
+      NTP_SOURCE_TYPE: "${NTP_SOURCE_TYPE:?Set NTP_SOURCE_TYPE in .env}"
       NTP_ALLOW: "${NTP_ALLOW?Set NTP_ALLOW in .env}"
       LOG_LEVEL: "${LOG_LEVEL:?Set LOG_LEVEL in .env}"
       TZ: "${TZ:?Set TZ in .env}"
       NOCLIENTLOG: "${NOCLIENTLOG:?Set NOCLIENTLOG in .env}"
       ENABLE_NTS: "${ENABLE_NTS:?Set ENABLE_NTS in .env}"
       ENABLE_SYSCLK: "${ENABLE_SYSCLK:?Set ENABLE_SYSCLK in .env}"
+      ENABLE_GPSD_SOCK: "${ENABLE_GPSD_SOCK:?Set ENABLE_GPSD_SOCK in .env}"
+      ENABLE_KERNEL_PPS: "${ENABLE_KERNEL_PPS:?Set ENABLE_KERNEL_PPS in .env}"
+      GPS_PREFER: "${GPS_PREFER:?Set GPS_PREFER in .env}"
+      DEV_TTY: "${DEV_TTY}"
+      DEV_PPS: "${DEV_PPS}"
+      NMEA_OFFSET: "${NMEA_OFFSET:?Set NMEA_OFFSET in .env}"
+      NMEA_DELAY: "${NMEA_DELAY:?Set NMEA_DELAY in .env}"
+      ENABLE_PTP: "${ENABLE_PTP:?Set ENABLE_PTP in .env}"
+      DEV_PTP: "${DEV_PTP}"
+      PTP_OFFSET: "${PTP_OFFSET:?Set PTP_OFFSET in .env}"
+
+volumes:
+  chrony-data:
