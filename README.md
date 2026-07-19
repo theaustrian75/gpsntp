@@ -124,6 +124,19 @@ u-blox configuration keys and protocol messages vary significantly by
 generation and firmware. Follow the integration manual for the exact model
 instead of applying generic `ubxtool` write commands.
 
+### Receiver debugging tools
+
+This debug build includes `ubxtool`, the Python `gps` module, and Python
+`serial` support. Verify them inside a running container with:
+
+```bash
+podman exec chrony-1 ubxtool -V
+podman exec chrony-1 python3 -c 'import gps, serial'
+```
+
+GPSD runs in read-only mode, so stop the container before using `ubxtool`
+directly against a mapped serial device for receiver configuration.
+
 ### Log timezone
 
 Chrony timestamps daemon and measurement logs in UTC by design; its log

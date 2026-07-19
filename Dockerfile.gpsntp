@@ -18,6 +18,8 @@ RUN apk add --no-cache \
         gpsd \
         gpsd-clients \
         pps-tools \
+        py3-gpsd \
+        py3-pyserial \
         tzdata \
     && apk add --no-cache --virtual .account-tools shadow \
     && if ! awk -F: -v gid="${CHRONY_GID}" \
