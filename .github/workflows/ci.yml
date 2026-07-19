@@ -65,7 +65,7 @@ jobs:
         run: |
           docker run --rm --entrypoint sh gpsntp:test -c \
             'command -v ubxtool && command -v ublox-config && python3 -c "import gps, serial"'
-          docker run --rm --entrypoint ublox-config gpsntp:test --help
+          docker run --rm --entrypoint /usr/local/bin/ublox-config gpsntp:test --help
 
       - name: Validate startup script in image
         run: |

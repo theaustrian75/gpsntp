@@ -135,17 +135,17 @@ podman compose build chrony
 podman compose stop chrony
 
 podman compose run --rm --no-deps \
-  --entrypoint ublox-config chrony inspect
+  --entrypoint /usr/local/bin/ublox-config chrony inspect
 
 podman compose run --rm --no-deps \
-  --entrypoint ublox-config chrony configure-timepulse
+  --entrypoint /usr/local/bin/ublox-config chrony configure-timepulse
 
 podman compose run --rm --no-deps \
-  --entrypoint ublox-config chrony verify
+  --entrypoint /usr/local/bin/ublox-config chrony verify
 
 # Persist only after the volatile configuration has been verified.
 podman compose run --rm --no-deps \
-  --entrypoint ublox-config chrony save
+  --entrypoint /usr/local/bin/ublox-config chrony save
 
 podman compose up -d chrony
 ```
