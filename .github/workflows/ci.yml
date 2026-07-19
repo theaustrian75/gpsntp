@@ -61,6 +61,11 @@ jobs:
           docker run --rm --entrypoint sh gpsntp:test -c \
             'test "$(id -u chrony)" = 108 && test "$(id -g chrony)" = 20'
 
+      - name: Validate u-blox debug tools
+        run: |
+          docker run --rm --entrypoint sh gpsntp:test -c \
+            'command -v ubxtool && python3 -c "import gps, serial"'
+
       - name: Validate startup script in image
         run: docker run --rm --entrypoint bash gpsntp:test -n /usr/local/bin/startup
 
