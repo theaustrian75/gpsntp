@@ -17,6 +17,7 @@ RUN apk add --no-cache \
         chrony \
         gpsd \
         gpsd-clients \
+        nss_wrapper \
         pps-tools \
         tzdata \
     && apk add --no-cache --virtual .account-tools shadow \

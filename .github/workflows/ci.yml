@@ -39,6 +39,13 @@ jobs:
             and .services.chrony.build.args.CHRONY_GID == "20"
             and .services.chrony.read_only == true
             and .services.chrony.network_mode == "host"
+            and any(.services.chrony.cap_drop[]; . == "ALL")
+            and any(.services.chrony.cap_add[]; . == "CHOWN")
+            and any(.services.chrony.cap_add[]; . == "FOWNER")
+            and any(.services.chrony.cap_add[]; . == "SETUID")
+            and any(.services.chrony.cap_add[]; . == "SETGID")
+            and any(.services.chrony.cap_add[]; . == "NET_BIND_SERVICE")
+            and any(.services.chrony.cap_add[]; . == "DAC_OVERRIDE")
             and any(.services.chrony.cap_add[]; . == "SYS_TIME")
             and .services.chrony.environment.ENABLE_SYSCLK == "true"
             and .services.chrony.environment.ENABLE_GPSD_SOCK == "true"
