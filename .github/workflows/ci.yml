@@ -28,7 +28,7 @@ jobs:
           sudo apt-get install --yes shellcheck
 
       - name: Check shell scripts
-        run: shellcheck assets/startup.sh
+        run: shellcheck assets/startup.sh tests/*.sh
 
       - name: Validate Compose configuration
         run: |
@@ -56,13 +56,8 @@ jobs:
       - name: Build image
         run: docker build --tag gpsntp:test --file Dockerfile.gpsntp .
 
-      - name: Validate Chrony account identity
-        run: |
-          docker run --rm --entrypoint sh gpsntp:test -c \
-            'test "$(id -u chrony)" = 108 && test "$(id -g chrony)" = 20'
-
-      - name: Validate startup script in image
-        run: docker run --rm --entrypoint bash gpsntp:test -n /usr/local/bin/startup
+      - name: Run configuration and container tests
+        run: tests/test-container.sh gpsntp:test
 
       - name: Validate image healthcheck
         run: |
