@@ -17,6 +17,7 @@ RUN apk add --no-cache \
         chrony \
         gpsd \
         gpsd-clients \
+        nss_wrapper \
         pps-tools \
         py3-gpsd \
         py3-pyserial \

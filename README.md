@@ -26,8 +26,9 @@ docker compose logs -f chrony
 
 The container uses host networking to serve UDP port 123. It has a read-only
 root filesystem; generated configuration and runtime state are kept in tmpfs.
-Chrony's oscillator drift data persists in the `chrony-data` volume. The
-`SYS_TIME` capability is required when `ENABLE_SYSCLK=true`.
+Chrony's oscillator drift data persists in the `chrony-data` volume. Compose
+drops all capabilities and adds only `CHOWN`, `FOWNER`, `SETUID`, `SETGID`,
+`NET_BIND_SERVICE`, `DAC_OVERRIDE`, and `SYS_TIME`.
 
 Set `NTP_ALLOW` to the network that should be allowed to query this server.
 For example, in `.env`:
@@ -50,8 +51,8 @@ defaults. Use a host firewall even when Chrony access is restricted.
   `ratelimit\nrtcsync`.
 - `NTP_ALLOW`: client network, `all`, or empty to disable clients; defaults
   to `all`.
-- `CHRONY_UID` / `CHRONY_GID`: numeric Chrony service identity compiled into
-  the image; defaults to `108:20`.
+- `CHRONY_UID` / `CHRONY_GID`: numeric Chrony service identity; defaults to
+  `108:20`. Override at runtime without rebuilding the image.
 - `DEV_TTY`: GPS serial device basename; auto-detects `ttyAMA0`.
 - `DEV_PPS`: PPS device basename; auto-detects `pps0`.
 - `ENABLE_GPSD_SOCK`: use GPSD's high-precision SOCK source; defaults to
@@ -252,22 +253,18 @@ display is required.
 
 ### Service identity
 
-The image runs Chrony as UID 108 and GID 20 by default. Alpine assigns GID 20
-to `dialout`, which provides the expected serial-device group identity. The
-published GHCR image uses these defaults.
+The image defaults to UID 108 and GID 20. Alpine assigns GID 20 to `dialout`,
+which matches typical serial-device group ownership. The published GHCR image
+bakes those defaults into the `chrony` account.
 
-UID and GID are build-time settings because Chrony drops privileges through
-the named `chrony` account. To use different IDs, update `CHRONY_UID` and
-`CHRONY_GID` in `.env`, then rebuild:
+Set `CHRONY_UID` and `CHRONY_GID` in `.env` to run as a different identity
+without rebuilding. Startup remaps the named `chrony` account at runtime via
+`nss_wrapper` (so it works with the read-only root filesystem) and owns
+runtime/state paths accordingly. Keep `CHRONY_GID=20` when the GPS serial
+device is group-owned by `dialout`.
 
-```bash
-docker compose build --pull
-docker compose up -d
-```
-
-Compose passes the same values to the container. Startup rejects an identity
-mismatch with a rebuild instruction instead of silently applying incorrect
-volume ownership.
+Build arguments remain available for images that should bake a non-default
+identity as their baseline.
 
 ## Health check
 
@@ -285,11 +282,19 @@ initial GPS fix.
 
 GitHub Actions performs the following checks:
 
-- ShellCheck validation of the startup script
+- ShellCheck validation of the startup and test scripts
 - Compose configuration validation
-- Container image build and embedded startup-script validation
+- Container image build
+- Startup validation, generated-config, and hardened smoke tests
 - Image health-check metadata validation
 - Native AMD64 and ARM64 builds
+
+Run the container suite locally after building an image:
+
+```bash
+docker build --tag gpsntp:test --file Dockerfile.gpsntp .
+tests/test-container.sh gpsntp:test
+```
 
 Pushes to `main` publish `main`, `sha-*`, and `latest` tags to GHCR. Tags
 starting with `v` also publish a matching release tag. Pull requests validate

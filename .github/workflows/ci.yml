@@ -28,7 +28,7 @@ jobs:
           sudo apt-get install --yes shellcheck
 
       - name: Check shell scripts
-        run: shellcheck assets/*.sh
+        run: shellcheck assets/*.sh tests/*.sh
 
       - name: Validate Compose configuration
         run: |
@@ -39,6 +39,13 @@ jobs:
             and .services.chrony.build.args.CHRONY_GID == "20"
             and .services.chrony.read_only == true
             and .services.chrony.network_mode == "host"
+            and any(.services.chrony.cap_drop[]; . == "ALL")
+            and any(.services.chrony.cap_add[]; . == "CHOWN")
+            and any(.services.chrony.cap_add[]; . == "FOWNER")
+            and any(.services.chrony.cap_add[]; . == "SETUID")
+            and any(.services.chrony.cap_add[]; . == "SETGID")
+            and any(.services.chrony.cap_add[]; . == "NET_BIND_SERVICE")
+            and any(.services.chrony.cap_add[]; . == "DAC_OVERRIDE")
             and any(.services.chrony.cap_add[]; . == "SYS_TIME")
             and .services.chrony.environment.ENABLE_SYSCLK == "true"
             and .services.chrony.environment.ENABLE_GPSD_SOCK == "true"
@@ -56,21 +63,15 @@ jobs:
       - name: Build image
         run: docker build --tag gpsntp:test --file Dockerfile.gpsntp .
 
-      - name: Validate Chrony account identity
-        run: |
-          docker run --rm --entrypoint sh gpsntp:test -c \
-            'test "$(id -u chrony)" = 108 && test "$(id -g chrony)" = 20'
-
       - name: Validate u-blox debug tools
         run: |
           docker run --rm --entrypoint sh gpsntp:test -c \
             'command -v ubxtool && command -v ublox-config && python3 -c "import gps, serial"'
           docker run --rm --entrypoint /usr/local/bin/ublox-config gpsntp:test --help
-
-      - name: Validate startup script in image
-        run: |
-          docker run --rm --entrypoint bash gpsntp:test -n /usr/local/bin/startup
           docker run --rm --entrypoint bash gpsntp:test -n /usr/local/bin/ublox-config
+
+      - name: Run configuration and container tests
+        run: tests/test-container.sh gpsntp:test
 
       - name: Validate image healthcheck
         run: |
