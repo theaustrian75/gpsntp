@@ -34,6 +34,7 @@ RUN apk add --no-cache \
 
 # Configure and start GPSD and chrony
 COPY --chmod=0755 assets/startup.sh /usr/local/bin/startup
+COPY --chmod=0755 assets/ublox-config.sh /usr/local/bin/ublox-config
 
 # NTP port
 EXPOSE 123/udp

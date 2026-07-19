@@ -127,15 +127,34 @@ instead of applying generic `ubxtool` write commands.
 ### Receiver debugging tools
 
 This debug build includes `ubxtool`, the Python `gps` module, and Python
-`serial` support. Verify them inside a running container with:
+`serial` support. It also provides an `ublox-config` wrapper for protocol 14
+u-blox 7 receivers.
 
 ```bash
-podman exec chrony-1 ubxtool -V
-podman exec chrony-1 python3 -c 'import gps, serial'
+podman compose build chrony
+podman compose stop chrony
+
+podman compose run --rm --no-deps \
+  --entrypoint ublox-config chrony inspect
+
+podman compose run --rm --no-deps \
+  --entrypoint ublox-config chrony configure-timepulse
+
+podman compose run --rm --no-deps \
+  --entrypoint ublox-config chrony verify
+
+# Persist only after the volatile configuration has been verified.
+podman compose run --rm --no-deps \
+  --entrypoint ublox-config chrony save
+
+podman compose up -d chrony
 ```
 
-GPSD runs in read-only mode, so stop the container before using `ubxtool`
-directly against a mapped serial device for receiver configuration.
+The wrapper defaults to `/dev/ttyAMA0`, 115200 baud, and protocol 14.00.
+Override them with `--device`, `--baud`, and `--protocol`. Run
+`ublox-config --help` for all actions. GPSD runs in read-only mode, so the
+normal service must remain stopped while the one-off configuration container
+uses the serial device directly.
 
 ### Log timezone
 
