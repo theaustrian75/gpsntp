@@ -32,12 +32,23 @@ jobs:
 
       - name: Validate Compose configuration
         run: |
-          docker compose config --format json > /tmp/compose-config.json
+          docker compose --env-file .env.example config --format json > /tmp/compose-config.json
           jq -e '
             .services.chrony.build.dockerfile == "Dockerfile.gpsntp"
             and .services.chrony.read_only == true
             and .services.chrony.network_mode == "host"
             and any(.services.chrony.cap_add[]; . == "SYS_TIME")
+            and .services.chrony.environment.ENABLE_SYSCLK == "true"
+            and .services.chrony.environment.ENABLE_GPSD_SOCK == "true"
+            and .services.chrony.environment.ENABLE_KERNEL_PPS == "false"
+            and .services.chrony.environment.GPS_PREFER == "true"
+            and .services.chrony.environment.NTP_ALLOW == "all"
+            and .services.chrony.environment.NTP_SOURCE_TYPE == "pool"
+            and any(
+              .services.chrony.volumes[];
+              .source == "chrony-data"
+              and .target == "/var/lib/chrony"
+            )
           ' /tmp/compose-config.json
 
       - name: Build image
