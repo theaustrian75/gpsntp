@@ -16,7 +16,15 @@ services:
     volumes:
       - chrony-data:/var/lib/chrony
     network_mode: host
+    cap_drop:
+      - ALL
     cap_add:
+      - CHOWN
+      - FOWNER
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+      - DAC_OVERRIDE
       - SYS_TIME
     devices:
       - "/dev/${DEV_TTY:?Set DEV_TTY in .env}:/dev/${DEV_TTY}:rw"
