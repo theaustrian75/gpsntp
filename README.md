@@ -111,18 +111,14 @@ The default mode is optimized for u-blox receivers with a 1 Hz timepulse:
   whole-second ambiguity.
 
 GPSD runs with `-nbN`. The `-b` option deliberately prevents it from changing
-receiver settings, so configure the u-blox persistently before deployment
-with u-center or a compatible `ubxtool` version:
+receiver settings, so configure the u-blox persistently before deployment.
+For protocol 14 u-blox 7 receivers, use the
+[u-blox 7 timing optimization](#u-blox-7-timing-optimization) procedure below
+(or u-center / a matching `ubxtool` for other generations).
 
-- Enable UBX binary output needed by GPSD for the receiver model.
-- Configure a 1 Hz timepulse aligned to UTC and valid only with a time fix.
-- Use a higher serial rate such as 115200 baud where supported.
-- In direct PPS mode, retain RMC or ZDA messages for second identification.
-- Save settings to the receiver's supported BBR or flash layer.
-
+In direct PPS mode, retain RMC or ZDA messages for second identification.
 u-blox configuration keys and protocol messages vary significantly by
-generation and firmware. Follow the integration manual for the exact model
-instead of applying generic `ubxtool` write commands.
+generation and firmware; follow the integration manual for the exact model.
 
 ### Receiver debugging tools
 
@@ -130,31 +126,120 @@ This debug build includes `ubxtool`, the Python `gps` module, and Python
 `serial` support. It also provides an `ublox-config` wrapper for protocol 14
 u-blox 7 receivers.
 
-```bash
-podman compose build chrony
-podman compose stop chrony
-
-podman compose run --rm --no-deps \
-  --entrypoint /usr/local/bin/ublox-config chrony inspect
-
-podman compose run --rm --no-deps \
-  --entrypoint /usr/local/bin/ublox-config chrony configure-timepulse
-
-podman compose run --rm --no-deps \
-  --entrypoint /usr/local/bin/ublox-config chrony verify
-
-# Persist only after the volatile configuration has been verified.
-podman compose run --rm --no-deps \
-  --entrypoint /usr/local/bin/ublox-config chrony save
-
-podman compose up -d chrony
-```
-
 The wrapper defaults to `/dev/ttyAMA0`, 115200 baud, and protocol 14.00.
 Override them with `--device`, `--baud`, and `--protocol`. Run
-`ublox-config --help` for all actions. GPSD runs in read-only mode, so the
-normal service must remain stopped while the one-off configuration container
-uses the serial device directly.
+`ublox-config --help` for all actions. GPSD runs in read-only mode (`-b`), so
+stop the normal Chrony service before any one-off configuration container uses
+the serial device.
+
+Factory u-blox 7 modules often speak **9600** baud until a higher rate is
+saved. Pass `--baud 9600` (or `-s 9600` for raw `ubxtool`) until the receiver
+has been switched and persisted at 115200. The Raspberry Pi UART itself does
+not need a baud setting in `config.txt`; GPSD sets the line speed when it
+opens the port.
+
+### u-blox 7 timing optimization
+
+Use this sequence on a Pi with a protocol 14 u-blox 7 to optimize GPSD SOCK /
+PPS timing. Keep Chrony stopped for every step that talks to the serial port.
+
+```bash
+docker compose build chrony
+docker compose stop chrony
+```
+
+**1. Inspect current settings**
+
+```bash
+docker compose run --rm --no-deps \
+  --entrypoint /usr/local/bin/ublox-config chrony \
+  --baud 9600 inspect
+```
+
+**2. Configure 1 Hz TIMEPULSE (UTC, pulse only when locked) and enable TIM-TP**
+
+`configure-timepulse` writes volatile RAM settings: 1 Hz UTC-aligned
+timepulse, rising edge, unlocked pulse length 0 / locked pulse length 10%,
+and enables `UBX-TIM-TP` so GPSD can apply sawtooth (`qErr`) correction.
+
+```bash
+docker compose run --rm --no-deps \
+  --entrypoint /usr/local/bin/ublox-config chrony \
+  --baud 9600 configure-timepulse
+```
+
+**3. Set stationary navigation mode**
+
+Stationary `dynModel` reduces timing jitter for a fixed antenna. Confirm or
+set it with `ubxtool`:
+
+```bash
+docker compose run --rm --no-deps --entrypoint ubxtool chrony \
+  -P 14.00 -f /dev/ttyAMA0 -s 9600 -p CFG-NAV5 -v 2
+
+# Only if dynModel is not already Stationary (2):
+docker compose run --rm --no-deps --entrypoint ubxtool chrony \
+  -P 14.00 -f /dev/ttyAMA0 -s 9600 -p MODEL,2
+```
+
+**4. Verify before saving**
+
+```bash
+docker compose run --rm --no-deps \
+  --entrypoint /usr/local/bin/ublox-config chrony \
+  --baud 9600 verify
+```
+
+Healthy output includes:
+
+- `CFG-TP5` at 1 Hz with `gridToGps (UTC)`, `Active`, `alignToTow`, `RisingEdge`
+- `UBX-TIM-TP` with `UTC:OK`, `qErr:Valid`, `TP:Locked`, and changing `qErr`
+- `CFG-NAV5` with `dynModel (Stationary)`
+- A 3D fix with several satellites in use
+
+**5. Raise the serial rate to 115200 (optional but recommended)**
+
+```bash
+docker compose run --rm --no-deps --entrypoint ubxtool chrony \
+  -P 14.00 -f /dev/ttyAMA0 -s 9600 -S 115200
+```
+
+After this command, use `--baud 115200` / `-s 115200` for all further tool
+invocations.
+
+```bash
+docker compose run --rm --no-deps \
+  --entrypoint /usr/local/bin/ublox-config chrony \
+  --baud 115200 verify
+```
+
+**6. Persist to BBR/flash**
+
+Save only after verify looks correct. This stores TIMEPULSE, TIM-TP enable,
+stationary mode, and baud (if changed) across power loss.
+
+```bash
+docker compose run --rm --no-deps \
+  --entrypoint /usr/local/bin/ublox-config chrony \
+  --baud 115200 save
+```
+
+If you skipped the baud change, save with `--baud 9600` instead.
+
+**7. Restart Chrony and confirm the GPS source**
+
+```bash
+docker compose up -d chrony
+docker compose exec chrony chronyc sources -v
+docker compose exec chrony chronyc tracking
+```
+
+After a few minutes the GPS SOCK source should be selected (`*`) with good
+reach. Optionally power-cycle the Pi and re-run `inspect` / `verify` at the
+saved baud to confirm the configuration persisted.
+
+Antenna sky view still dominates accuracy. Keep `CHRONY_GID=20` (`dialout`)
+when the GPS UART is group-owned by that group on the host.
 
 ### Log timezone
 
