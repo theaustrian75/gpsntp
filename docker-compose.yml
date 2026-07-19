@@ -18,10 +18,10 @@ services:
       - /dev/pps0:/dev/pps0:rw
       - /dev/ptp0:/dev/ptp0:rw
     environment:
-      - "NTP_SERVERS=time.cloudflare.com,time.apple.com,time.google.com"
-      - NTP_ALLOW=${NTP_ALLOW:-all}
-      - LOG_LEVEL=0
-      - TZ=America/New_York
-      - NOCLIENTLOG=false
-      - ENABLE_NTS=false
-      - ENABLE_SYSCLK=true
+      NTP_SERVERS: "${NTP_SERVERS:?Set NTP_SERVERS in .env}"
+      NTP_ALLOW: "${NTP_ALLOW?Set NTP_ALLOW in .env}"
+      LOG_LEVEL: "${LOG_LEVEL:?Set LOG_LEVEL in .env}"
+      TZ: "${TZ:?Set TZ in .env}"
+      NOCLIENTLOG: "${NOCLIENTLOG:?Set NOCLIENTLOG in .env}"
+      ENABLE_NTS: "${ENABLE_NTS:?Set ENABLE_NTS in .env}"
+      ENABLE_SYSCLK: "${ENABLE_SYSCLK:?Set ENABLE_SYSCLK in .env}"

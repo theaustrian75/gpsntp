@@ -16,6 +16,8 @@ The included Compose file expects `/dev/ttyAMA0`, `/dev/pps0`, and `/dev/ptp0`
 on the host. Remove any device mappings that are not present.
 
 ```bash
+cp .env.example .env
+# Edit .env for your network and time sources.
 docker compose up -d --build
 docker compose ps
 docker compose logs -f chrony
@@ -26,15 +28,15 @@ root filesystem; generated configuration and runtime state are kept in tmpfs.
 The `SYS_TIME` capability is required when `ENABLE_SYSCLK=true`.
 
 Set `NTP_ALLOW` to the network that should be allowed to query this server.
-For example:
+For example, in `.env`:
 
-```yaml
-environment:
-  NTP_ALLOW: 192.168.1.0/24
+```dotenv
+NTP_ALLOW=192.168.1.0/24
 ```
 
 The default is `all`. Set it to an empty string to disable remote NTP clients.
-Use a host firewall even when Chrony access is restricted.
+The local `.env` file is ignored by Git; `.env.example` contains the tracked
+defaults. Use a host firewall even when Chrony access is restricted.
 
 ## Configuration
 
