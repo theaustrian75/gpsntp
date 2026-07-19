@@ -126,7 +126,7 @@ docker run -d --name "$CONTAINER" \
   -e ENABLE_PTP=false \
   -e ENABLE_SYSCLK=false \
   -e ENABLE_NTS=false \
-  -e NOCLIENTLOG=true \
+  -e NOCLIENTLOG=false \
   -e NTP_SERVERS=127.127.1.1 \
   -e NTP_SOURCE_TYPE=server \
   -e NTP_ALLOW=192.0.2.0/24 \
