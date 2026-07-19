@@ -168,11 +168,19 @@ initial GPS fix.
 
 GitHub Actions performs the following checks:
 
-- ShellCheck validation of the startup script
+- ShellCheck validation of the startup and test scripts
 - Compose configuration validation
-- Container image build and embedded startup-script validation
+- Container image build
+- Startup validation, generated-config, and hardened smoke tests
 - Image health-check metadata validation
 - Native AMD64 and ARM64 builds
+
+Run the container suite locally after building an image:
+
+```bash
+docker build --tag gpsntp:test --file Dockerfile.gpsntp .
+tests/test-container.sh gpsntp:test
+```
 
 Pushes to `main` publish `main`, `sha-*`, and `latest` tags to GHCR. Tags
 starting with `v` also publish a matching release tag. Pull requests validate
