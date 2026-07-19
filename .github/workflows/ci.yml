@@ -28,7 +28,7 @@ jobs:
           sudo apt-get install --yes shellcheck
 
       - name: Check shell scripts
-        run: shellcheck assets/startup.sh
+        run: shellcheck assets/*.sh
 
       - name: Validate Compose configuration
         run: |
@@ -64,10 +64,13 @@ jobs:
       - name: Validate u-blox debug tools
         run: |
           docker run --rm --entrypoint sh gpsntp:test -c \
-            'command -v ubxtool && python3 -c "import gps, serial"'
+            'command -v ubxtool && command -v ublox-config && python3 -c "import gps, serial"'
+          docker run --rm --entrypoint ublox-config gpsntp:test --help
 
       - name: Validate startup script in image
-        run: docker run --rm --entrypoint bash gpsntp:test -n /usr/local/bin/startup
+        run: |
+          docker run --rm --entrypoint bash gpsntp:test -n /usr/local/bin/startup
+          docker run --rm --entrypoint bash gpsntp:test -n /usr/local/bin/ublox-config
 
       - name: Validate image healthcheck
         run: |
