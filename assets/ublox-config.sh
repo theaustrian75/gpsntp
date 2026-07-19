@@ -94,7 +94,8 @@ case "${action}" in
   configure-timepulse)
     echo "Configuring volatile u-blox 7 timepulse settings on ${device}" >&2
     "${ubx[@]}" -p 'CFG-TP5,0,,,1000000,1000000,0,100000,0,0x77'
-    "${ubx[@]}" -e TP
+    # Enable UBX-TIM-TP (class 0x0d, message 0x01) once per navigation cycle.
+    "${ubx[@]}" -p 'CFG-MSG,0x0d,0x01,1'
     echo "Configuration is not persistent; run verify before save." >&2
     ;;
   verify)
