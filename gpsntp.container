@@ -4,6 +4,10 @@
 Description=GPS Chrony NTP server
 After=network-online.target
 Wants=network-online.target
+# Only one process may steer the host clock. With ENABLE_SYSCLK=true this
+# container owns it; competing daemons trigger chronyd's interference warning
+# and eventual exit (see README "Host clock ownership").
+Conflicts=systemd-timesyncd.service chronyd.service ntp.service ntpd.service openntpd.service
 
 [Container]
 # Replace with an immutable release tag or manifest digest before installing.

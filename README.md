@@ -30,6 +30,57 @@ Chrony's oscillator drift data persists in the `chrony-data` volume. Compose
 drops all capabilities and adds only `CHOWN`, `FOWNER`, `SETUID`, `SETGID`,
 `NET_BIND_SERVICE`, `DAC_OVERRIDE`, and `SYS_TIME`.
 
+### Host clock ownership
+
+With `ENABLE_SYSCLK=true` (the Compose / Quadlet default), Chrony steers the
+**host** clock via `CAP_SYS_TIME`. Only one NTP client may do that. On reboot,
+`systemd-timesyncd` (or a host `chronyd` / `ntpd`) often starts first and both
+processes adjust the clock. Chrony then logs:
+
+```text
+System clock interference detected (another NTP client?)
+```
+
+and later exits. The follow-on `SHM: shmctl(... IPC_RMID) failed, Operation not
+permitted` line is GPSD shared-memory cleanup under the dropped capability set;
+it is not the root cause.
+
+Disable every other host time daemon before enabling system-clock control:
+
+```bash
+sudo timedatectl set-ntp false
+# or explicitly:
+sudo systemctl disable --now systemd-timesyncd
+sudo systemctl disable --now chronyd ntp ntpd openntpd 2>/dev/null || true
+```
+
+Confirm with `timedatectl` that `NTP service` is inactive, then restart the
+container.
+
+### Podman Compose and reboot
+
+This stack is typically run as rootful Podman behind `docker-compose` /
+`podman-compose`. Compose `restart: unless-stopped` alone does **not** bring
+containers back after reboot unless Podman's restart helper is enabled:
+
+```bash
+sudo systemctl enable --now podman-restart.service
+```
+
+Then start (or recreate) the project once so containers exist with that policy:
+
+```bash
+docker compose up -d
+# or: podman-compose up -d
+```
+
+After reboot, `podman-restart.service` starts containers that still have a
+restart policy. If you prefer a systemd-managed unit instead of the restart
+service, install the Quadlet files (`gpsntp.container`, `chrony-data.volume`)
+under `/etc/containers/systemd/`, set the image digest, `daemon-reload`, and
+`systemctl enable --now gpsntp`. The Quadlet unit conflicts with common host
+NTP services so systemd will not run both.
+
 Set `NTP_ALLOW` to the network that should be allowed to query this server.
 For example, in `.env`:
 
@@ -68,8 +119,9 @@ defaults. Use a host firewall even when Chrony access is restricted.
 - `PTP_OFFSET`: PHC-to-UTC correction in seconds; defaults to `0`.
 - `ENABLE_NTS`: enable NTS for configured upstream servers; defaults to
   `false`.
-- `ENABLE_SYSCLK`: permit Chrony to adjust the system clock; defaults to
-  `false`.
+- `ENABLE_SYSCLK`: permit Chrony to adjust the host system clock; entrypoint
+  defaults to `false`, but Compose / Quadlet / `.env.example` set `true`.
+  Requires disabling other host NTP clients (see Host clock ownership).
 - `NOCLIENTLOG`: disable Chrony client-access logging; defaults to `false`.
 - `LOG_LEVEL`: Chrony log level from `0` through `3`; defaults to `0`.
 - `TZ`: timezone for container tools; defaults to `America/New_York`.
