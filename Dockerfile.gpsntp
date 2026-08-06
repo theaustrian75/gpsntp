@@ -19,6 +19,8 @@ RUN apk add --no-cache \
         gpsd-clients \
         nss_wrapper \
         pps-tools \
+        py3-gpsd \
+        py3-pyserial \
         tzdata \
     && apk add --no-cache --virtual .account-tools shadow \
     && if ! awk -F: -v gid="${CHRONY_GID}" \
@@ -33,6 +35,7 @@ RUN apk add --no-cache \
 
 # Configure and start GPSD and chrony
 COPY --chmod=0755 assets/startup.sh /usr/local/bin/startup
+COPY --chmod=0755 assets/ublox-config.sh /usr/local/bin/ublox-config
 
 # NTP port
 EXPOSE 123/udp

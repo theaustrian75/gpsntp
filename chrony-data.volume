@@ -1,0 +1,4 @@
+# /etc/containers/systemd/chrony-data.volume
+# Persistent Chrony oscillator drift data for gpsntp.container
+[Volume]
+VolumeName=chrony-data
