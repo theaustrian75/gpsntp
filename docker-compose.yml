@@ -7,7 +7,7 @@ services:
       args:
         CHRONY_UID: "${CHRONY_UID:?Set CHRONY_UID in .env}"
         CHRONY_GID: "${CHRONY_GID:?Set CHRONY_GID in .env}"
-    restart: unless-stopped
+    restart: always
     read_only: true
     tmpfs:
       - /etc/chrony:rw,mode=1750

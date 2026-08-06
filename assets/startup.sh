@@ -264,6 +264,9 @@ chronyd_args=(-u chrony -d -L "${LOG_LEVEL}" -f "${CHRONY_CONF_FILE}")
 if [[ "${ENABLE_SYSCLK}" != "true" ]]; then
   # Disable system-clock control unless explicitly enabled.
   chronyd_args+=(-x)
+  echo "ENABLE_SYSCLK=false: chronyd will run with -x (no host clock control)"
+else
+  echo "ENABLE_SYSCLK=true: chronyd will control the host clock (requires CAP_SYS_TIME)"
 fi
 
 # Keep Bash as PID 1 so it can supervise both daemons and forward signals.

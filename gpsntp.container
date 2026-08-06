@@ -4,9 +4,12 @@
 Description=GPS Chrony NTP server
 After=network-online.target
 Wants=network-online.target
+# UART/PPS often appear after podman-restart runs; wait for the device units.
+After=dev-ttyAMA0.device dev-pps0.device
+Wants=dev-ttyAMA0.device dev-pps0.device
 # Only one process may steer the host clock. With ENABLE_SYSCLK=true this
 # container owns it; competing daemons trigger chronyd's interference warning
-# and eventual exit (see README "Host clock ownership").
+# (see README "Host clock ownership").
 Conflicts=systemd-timesyncd.service chronyd.service ntp.service ntpd.service openntpd.service
 
 [Container]
@@ -61,6 +64,7 @@ StopTimeout=15
 HealthOnFailure=restart
 
 [Service]
+# Retry if udev is slow bringing up tty/PPS after multi-user starts.
 Restart=on-failure
 RestartSec=5
 
