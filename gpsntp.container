@@ -1,0 +1,64 @@
+# /etc/containers/systemd/gpsntp.container
+# Quadlet unit — after editing: systemctl daemon-reload && systemctl restart gpsntp
+[Unit]
+Description=GPS Chrony NTP server
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Replace with an immutable release tag or manifest digest before installing.
+Image=ghcr.io/theaustrian75/gpsntp@sha256:REPLACE_WITH_MANIFEST_DIGEST
+ContainerName=gpsntp
+# Entrypoint remaps the named chrony account via nss_wrapper, then owns
+# runtime/state paths. Keep CHRONY_GID=20 when the GPS UART is dialout-owned.
+Environment=NTP_SERVERS=0.pool.ntp.org,1.pool.ntp.org,2.pool.ntp.org,3.pool.ntp.org
+Environment=NTP_SOURCE_TYPE=pool
+Environment=NTP_ALLOW=all
+Environment=CHRONY_UID=108
+Environment=CHRONY_GID=20
+Environment=LOG_LEVEL=0
+Environment=TZ=America/New_York
+Environment=NOCLIENTLOG=false
+Environment=ENABLE_NTS=false
+Environment=ENABLE_SYSCLK=true
+Environment=ENABLE_GPSD_SOCK=true
+Environment=ENABLE_KERNEL_PPS=false
+Environment=GPS_PREFER=true
+Environment=DEV_TTY=ttyAMA0
+Environment=DEV_PPS=pps0
+Environment=NMEA_OFFSET=0.5
+Environment=NMEA_DELAY=0.1
+Environment=ENABLE_PTP=false
+Environment=DEV_PTP=ptp0
+Environment=PTP_OFFSET=0
+# Host networking is required to serve UDP/123.
+Network=host
+AddDevice=/dev/ttyAMA0:/dev/ttyAMA0:rw
+AddDevice=/dev/pps0:/dev/pps0:rw
+# Uncomment only when ENABLE_PTP=true and the PHC exists on the host.
+#AddDevice=/dev/ptp0:/dev/ptp0:rw
+Volume=chrony-data.volume:/var/lib/chrony
+Tmpfs=/etc/chrony:rw,mode=1750
+Tmpfs=/run:rw,mode=0755
+ReadOnly=true
+# No NoNewPrivileges: Chrony needs ambient NET_BIND_SERVICE / SYS_TIME after
+# dropping to CHRONY_UID.
+DropCapability=all
+AddCapability=CAP_CHOWN
+AddCapability=CAP_FOWNER
+AddCapability=CAP_SETUID
+AddCapability=CAP_SETGID
+AddCapability=CAP_NET_BIND_SERVICE
+AddCapability=CAP_DAC_OVERRIDE
+AddCapability=CAP_SYS_TIME
+PidsLimit=256
+Memory=256m
+StopTimeout=15
+HealthOnFailure=restart
+
+[Service]
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
