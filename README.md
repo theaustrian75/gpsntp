@@ -30,6 +30,96 @@ Chrony's oscillator drift data persists in the `chrony-data` volume. Compose
 drops all capabilities and adds only `CHOWN`, `FOWNER`, `SETUID`, `SETGID`,
 `NET_BIND_SERVICE`, `DAC_OVERRIDE`, and `SYS_TIME`.
 
+### Host clock ownership
+
+With `ENABLE_SYSCLK=true` (the Compose / Quadlet default), Chrony steers the
+**host** clock via `CAP_SYS_TIME`. Only one NTP client should do that. If a
+host daemon such as `systemd-timesyncd` is also adjusting the clock, Chrony
+4.8+ may log:
+
+```text
+System clock interference detected (another NTP client?)
+```
+
+That line is a **warning**, not a fatal error — Chrony does not exit because of
+it. The same message can also appear as a false positive around source
+selection / `makestep`. With `ENABLE_SYSCLK=false`, Chrony is started with
+`-x` and uses a null clock driver, so that warning cannot come from clock
+control; if you still see it, the container is not actually running with
+`-x` (check startup logs for the `ENABLE_SYSCLK=` line and `ps` for `-x`).
+
+The bare `SHM: shmctl(... IPC_RMID) failed, Operation not permitted` line
+(no Chrony timestamp) is GPSD cleaning up NTP SHM segments on shutdown under
+the dropped capability set. It is a shutdown side effect, not the reason the
+container stopped.
+
+When you do want Chrony to own the host clock, disable other time daemons:
+
+```bash
+sudo timedatectl set-ntp false
+# or explicitly:
+sudo systemctl disable --now systemd-timesyncd
+sudo systemctl disable --now chronyd ntp ntpd openntpd 2>/dev/null || true
+```
+
+### Podman Compose and reboot
+
+Manual `docker compose up` as root works because you start the stack after the
+host is up. Reboot is different: `podman-restart.service` only starts containers
+that already have a restart policy **and** still qualify.
+
+A container left `exited` with `restart: unless-stopped` is skipped on boot
+even when other stacks come back. Editing YAML to `restart: always` does
+nothing until recreate.
+
+```bash
+cd /path/to/gpsntp   # your compose project directory
+# compose must contain: restart: always
+docker compose up -d --force-recreate
+podman inspect <chrony-container> --format 'Restart={{.HostConfig.RestartPolicy.Name}} Status={{.State.Status}}'
+# expect: Restart=always Status=running
+sudo systemctl enable --now podman-restart.service
+```
+
+After the next reboot, if policy is `always` but the container is still down,
+check whether UART/PPS were missing when Podman tried to bind devices:
+
+```bash
+journalctl -u podman-restart.service -b --no-pager | rg -i 'chrony|ttyAMA|pps0|no such file|error'
+ls -l /dev/ttyAMA0 /dev/pps0
+```
+
+Prefer a unit that waits for those devices instead of racing `podman-restart`.
+Either install the Quadlet files (`gpsntp.container` waits on
+`dev-ttyAMA0.device` / `dev-pps0.device`) or a compose oneshot:
+
+```ini
+# /etc/systemd/system/gpsntp-compose.service
+[Unit]
+Description=GPS NTP compose stack
+After=network-online.target dev-ttyAMA0.device dev-pps0.device
+Wants=network-online.target dev-ttyAMA0.device dev-pps0.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/path/to/gpsntp
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now gpsntp-compose.service
+```
+
+With that unit you can leave chrony out of `podman-restart` and still get a
+reliable boot start once the GPS devices exist.
+
 Set `NTP_ALLOW` to the network that should be allowed to query this server.
 For example, in `.env`:
 
@@ -68,8 +158,9 @@ defaults. Use a host firewall even when Chrony access is restricted.
 - `PTP_OFFSET`: PHC-to-UTC correction in seconds; defaults to `0`.
 - `ENABLE_NTS`: enable NTS for configured upstream servers; defaults to
   `false`.
-- `ENABLE_SYSCLK`: permit Chrony to adjust the system clock; defaults to
-  `false`.
+- `ENABLE_SYSCLK`: permit Chrony to adjust the host system clock; entrypoint
+  defaults to `false`, but Compose / Quadlet / `.env.example` set `true`.
+  Requires disabling other host NTP clients (see Host clock ownership).
 - `NOCLIENTLOG`: disable Chrony client-access logging; defaults to `false`.
 - `LOG_LEVEL`: Chrony log level from `0` through `3`; defaults to `0`.
 - `TZ`: timezone for container tools; defaults to `America/New_York`.
