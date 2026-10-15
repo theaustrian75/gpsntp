@@ -28,7 +28,8 @@ The container uses host networking to serve UDP port 123. It has a read-only
 root filesystem; generated configuration and runtime state are kept in tmpfs.
 Chrony's oscillator drift data persists in the `chrony-data` volume. Compose
 drops all capabilities and adds only `CHOWN`, `FOWNER`, `SETUID`, `SETGID`,
-`NET_BIND_SERVICE`, `DAC_OVERRIDE`, and `SYS_TIME`.
+`NET_BIND_SERVICE`, `DAC_OVERRIDE`, `IPC_LOCK`, and `SYS_TIME`.
+`IPC_LOCK` lets GPSD lock its NTP shared-memory segments.
 
 ### Host clock ownership
 
