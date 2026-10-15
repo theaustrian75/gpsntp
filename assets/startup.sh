@@ -69,9 +69,9 @@ if [[ "${ENABLE_GPSD_SOCK}" == "true" && "${ENABLE_KERNEL_PPS}" == "true" ]]; th
 fi
 
 case "${NTP_SOURCE_TYPE}" in
-  pool|server) ;;
+  pool|server|peer) ;;
   *)
-    echo "NTP_SOURCE_TYPE must be pool or server" >&2
+    echo "NTP_SOURCE_TYPE must be pool, server, or peer" >&2
     exit 1
     ;;
 esac

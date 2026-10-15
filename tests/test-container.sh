@@ -58,8 +58,13 @@ assert_failure "TZ must name an installed IANA timezone" \
   -e ENABLE_GPSD_SOCK=false -e ENABLE_KERNEL_PPS=false -e ENABLE_PTP=false \
   "$IMAGE"
 
-assert_failure "NTP_SOURCE_TYPE must be pool or server" \
-  docker run --rm -e NTP_SOURCE_TYPE=peer \
+assert_failure "NTP_SOURCE_TYPE must be pool, server, or peer" \
+  docker run --rm -e NTP_SOURCE_TYPE=bogus \
+  -e ENABLE_GPSD_SOCK=false -e ENABLE_KERNEL_PPS=false -e ENABLE_PTP=false \
+  "$IMAGE"
+
+assert_failure "Invalid NTP source type 'bogus'" \
+  docker run --rm -e NTP_SERVERS=bogus:time.example.org \
   -e ENABLE_GPSD_SOCK=false -e ENABLE_KERNEL_PPS=false -e ENABLE_PTP=false \
   "$IMAGE"
 
@@ -128,7 +133,7 @@ docker run -d --name "$CONTAINER" \
   -e ENABLE_SYSCLK=false \
   -e ENABLE_NTS=false \
   -e NOCLIENTLOG=false \
-  -e NTP_SERVERS=127.127.1.1 \
+  -e NTP_SERVERS=127.127.1.1,peer:192.0.2.10,pool:pool.invalid,2001:db8::123 \
   -e NTP_SOURCE_TYPE=server \
   -e NTP_ALLOW=192.0.2.0/24 \
   -e NTP_DIRECTIVES='ratelimit\nrtcsync' \
