@@ -54,7 +54,7 @@ real CI (GitHub `ubuntu-24.04`). Do not commit a modified test.
 
 ```bash
 # Lint (shellcheck installed in snapshot; jq preinstalled)
-shellcheck assets/*.sh tests/*.sh
+shellcheck -x assets/*.sh assets/lib/*.sh tests/*.sh
 
 # Compose config validation
 docker compose --env-file .env.example config --format json > /tmp/cc.json

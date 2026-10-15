@@ -74,7 +74,7 @@ assert_failure "ENABLE_GPSD_SOCK and ENABLE_KERNEL_PPS cannot both be true" \
   -e DEV_TTY=ttyAMA0 -e DEV_PPS=pps0 \
   "$IMAGE"
 
-assert_failure "ENABLE_GPSD_SOCK requires DEV_TTY" \
+assert_failure "ENABLE_GPSD_SOCK requires DEV_TTY and DEV_PPS" \
   docker run --rm \
   -e ENABLE_GPSD_SOCK=true -e ENABLE_KERNEL_PPS=false -e ENABLE_PTP=false \
   "$IMAGE"

@@ -144,8 +144,10 @@ defaults. Use a host firewall even when Chrony access is restricted.
   to `all`.
 - `CHRONY_UID` / `CHRONY_GID`: numeric Chrony service identity; defaults to
   `108:20`. Override at runtime without rebuilding the image.
-- `DEV_TTY`: GPS serial device basename; auto-detects `ttyAMA0`.
-- `DEV_PPS`: PPS device basename; auto-detects `pps0`.
+- `DEV_TTY`: GPS serial device basename; auto-detects `ttyAMA0`. Required
+  with `DEV_PPS` when GPSD SOCK or kernel PPS is enabled.
+- `DEV_PPS`: PPS device basename; auto-detects `pps0`. Required with
+  `DEV_TTY` when GPSD SOCK or kernel PPS is enabled.
 - `ENABLE_GPSD_SOCK`: use GPSD's high-precision SOCK source; defaults to
   `true`.
 - `ENABLE_KERNEL_PPS`: use direct PPS locked to GPSD NMEA instead; defaults
@@ -153,7 +155,7 @@ defaults. Use a host firewall even when Chrony access is restricted.
 - `GPS_PREFER`: prefer the selected GPS/PPS source when it agrees with the
   other sources; defaults to `true`.
 - `NMEA_OFFSET` / `NMEA_DELAY`: receiver-specific NMEA timing adjustments
-  used only in direct kernel PPS mode.
+  applied to the clk SOCK in GPSD SOCK and kernel PPS modes.
 - `ENABLE_PTP`: enable a PHC source explicitly; defaults to `false`.
 - `DEV_PTP`: PHC device basename; defaults to `ptp0`.
 - `PTP_OFFSET`: PHC-to-UTC correction in seconds; defaults to `0`.
@@ -173,17 +175,16 @@ does not accept receiver time without a current fix.
 
 ### GPS source modes
 
-The default `ENABLE_GPSD_SOCK=true` mode uses GPSD's Chrony SOCK protocol.
-With a separate KPPS device (`DEV_PPS`, e.g. GPIO `/dev/pps1` on a Pi 5),
-Chrony listens on:
+The default `ENABLE_GPSD_SOCK=true` mode uses GPSD's Chrony SOCK protocol
+and requires `DEV_TTY` plus `DEV_PPS`. Chrony listens on:
 
 - `/run/chrony.clk.<tty>.sock` — serial/NMEA second labels (`noselect`)
 - `/run/chrony.<pps>.sock` — KPPS samples from that PPS device (`prefer`)
 
-GPSD names sockets after each device basename, so listening only on
-`/run/chrony.<tty>.sock` misses GPIO PPS. On Pi hosts that also create a
-dead PTP `pps0`, gpsd's MAGIC_HAT helper may attach the tty session to
-`pps0`; feeding `/dev/<DEV_PPS>` into GPSD and creating its SOCK avoids that.
+GPSD names sockets after each device basename, so GPIO PPS must have its
+own SOCK. On Pi hosts that also create a dead PTP `pps0`, gpsd's MAGIC_HAT
+helper may attach the tty session to `pps0`; set `DEV_PPS` to the live
+GPIO node (often `pps1`) so GPSD and Chrony use that device.
 
 For direct kernel PPS instead of GPSD's PPS SOCK, set:
 

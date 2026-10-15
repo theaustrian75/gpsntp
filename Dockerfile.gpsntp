@@ -40,6 +40,7 @@ RUN apk upgrade --no-cache \
 
 # Configure and start GPSD and chrony
 COPY --chmod=0755 assets/startup.sh /usr/local/bin/startup
+COPY assets/lib /usr/local/lib/gpsntp
 COPY --chmod=0755 assets/ublox-config.sh /usr/local/bin/ublox-config
 
 # NTP port
