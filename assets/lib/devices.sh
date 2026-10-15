@@ -19,12 +19,14 @@ pps_assert_count() {
 
 pps_is_live() {
   local name=$1
-  local path count
+  local source path count
   count="$(pps_assert_count "${name}")"
   (( count > 0 )) || return 1
+  # PTP-backed PPS nodes report the PHC (e.g. "ptp0") in name; some kernels
+  # use path instead.
+  source="$(cat "/sys/class/pps/${name}/name" 2>/dev/null || true)"
   path="$(cat "/sys/class/pps/${name}/path" 2>/dev/null || true)"
-  # Skip Ethernet PTP-backed PPS nodes (often dead pps0 on Pi).
-  [[ "${path}" != ptp* ]]
+  [[ "${source}" != ptp* && "${path}" != ptp* ]]
 }
 
 list_live_pps() {
@@ -59,13 +61,10 @@ resolve_dev_pps() {
     exit 1
   fi
 
-  if [[ "${DEV_PPS}" == "pps0" ]]; then
-    for live in "${live_pps[@]}"; do
-      if [[ "${live}" != "pps0" ]]; then
-        echo "DEV_PPS=pps0 refused; live PPS device(s): ${live_pps[*]} (set DEV_PPS=${live})" >&2
-        exit 1
-      fi
-    done
+  # Refuse pps0 only when it is not itself live; a GPIO pps0 is fine.
+  if [[ "${DEV_PPS}" == "pps0" ]] && (( ${#live_pps[@]} > 0 )) && ! pps_is_live pps0; then
+    echo "DEV_PPS=pps0 refused; live PPS device(s): ${live_pps[*]} (set DEV_PPS=${live_pps[0]})" >&2
+    exit 1
   fi
 }
 
