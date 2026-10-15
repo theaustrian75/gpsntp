@@ -134,10 +134,18 @@ defaults. Use a host firewall even when Chrony access is restricted.
 
 ## Configuration
 
-- `NTP_SERVERS`: comma-separated upstream NTP servers; defaults to the four
-  `pool.ntp.org` servers.
-- `NTP_SOURCE_TYPE`: interpret upstream entries as `pool` or `server`;
-  defaults to `pool`.
+- `NTP_SERVERS`: comma-separated time sources; defaults to the four
+  `pool.ntp.org` servers. Prefix an entry with `pool:`, `server:`, or `peer:`
+  to set its type individually, for example
+  `pool:0.pool.ntp.org,server:time.cloudflare.com,peer:192.168.1.20`.
+  Unprefixed entries (including bare IPv6 addresses) use `NTP_SOURCE_TYPE`.
+  Pools get `iburst maxsources 1`, servers get `iburst`, and both get `nts`
+  when `ENABLE_NTS=true`. Peers are symmetric associations with no extra
+  options (NTS does not support them). The other host must also list this one
+  as a peer; use peers only on a trusted network, because they are
+  unauthenticated.
+- `NTP_SOURCE_TYPE`: default type for unprefixed `NTP_SERVERS` entries:
+  `pool`, `server`, or `peer`; defaults to `pool`.
 - `NTP_DIRECTIVES`: additional Chrony directives; defaults to
   `ratelimit\nrtcsync`.
 - `NTP_ALLOW`: client network, `all`, or empty to disable clients; defaults

@@ -15,31 +15,51 @@ generate_chrony_conf() {
     echo "# time servers provided by the NTP_SERVERS environment variable."
   } > "${CHRONY_CONF_FILE}"
 
-  local server source_options
-  local -a ntp_servers
+  local entry prefix server source_type
+  local -a ntp_servers source_options
   IFS=',' read -ra ntp_servers <<< "${NTP_SERVERS}"
-  for server in "${ntp_servers[@]}"; do
-    server="$(printf '%s' "${server}" | xargs)"
-    [[ -n "${server}" ]] || continue
+  for entry in "${ntp_servers[@]}"; do
+    entry="$(printf '%s' "${entry}" | xargs)"
+    [[ -n "${entry}" ]] || continue
+
+    # Optional per-entry type prefix; a hex-only prefix is an IPv6 address.
+    source_type="${NTP_SOURCE_TYPE}"
+    server="${entry}"
+    if [[ "${entry}" =~ ^([A-Za-z]+):(.+)$ ]] && prefix="${BASH_REMATCH[1]}" \
+        && [[ ! "${prefix}" =~ ^[0-9A-Fa-f]{1,4}$ ]]; then
+      source_type="${prefix,,}"
+      server="${entry#*:}"
+      case "${source_type}" in
+        pool|server|peer) ;;
+        *)
+          echo "Invalid NTP source type '${prefix}' in '${entry}'; use pool:, server:, or peer:" >&2
+          exit 1
+          ;;
+      esac
+    fi
 
     if [[ ! "${server}" =~ ^[A-Za-z0-9._:-]+$ ]]; then
-      echo "Invalid NTP server '${server}'" >&2
+      echo "Invalid NTP server '${entry}'" >&2
       exit 1
     fi
 
     if [[ "${server}" == 127.* ]]; then
       echo "server ${server}" >> "${CHRONY_CONF_FILE}"
       echo "local stratum 10" >> "${CHRONY_CONF_FILE}"
-    else
-      source_options=(iburst)
-      if [[ "${NTP_SOURCE_TYPE}" == "pool" ]]; then
-        source_options+=(maxsources 1)
-      fi
-      if [[ "${ENABLE_NTS}" == "true" ]]; then
-        source_options+=(nts)
-      fi
-      echo "${NTP_SOURCE_TYPE} ${server} ${source_options[*]}" >> "${CHRONY_CONF_FILE}"
+      continue
     fi
+
+    # NTS and maxsources apply only to client associations; symmetric peers
+    # take neither.
+    source_options=()
+    case "${source_type}" in
+      pool) source_options=(iburst maxsources 1) ;;
+      server) source_options=(iburst) ;;
+    esac
+    if [[ "${source_type}" != "peer" && "${ENABLE_NTS}" == "true" ]]; then
+      source_options+=(nts)
+    fi
+    echo "${source_type} ${server}${source_options[*]:+ ${source_options[*]}}" >> "${CHRONY_CONF_FILE}"
   done
 
   local -a pps_options

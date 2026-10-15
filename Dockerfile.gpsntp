@@ -15,7 +15,7 @@ ENV NTP_DIRECTIVES="ratelimit\nrtcsync" \
 RUN apk upgrade --no-cache \
     && apk add --no-cache \
         bash \
-        chrony \
+        chrony-nts \
         gpsd \
         gpsd-clients \
         nss_wrapper \
