@@ -21,6 +21,7 @@ if grep -Eq 'refclock (SOCK|PPS|PHC)' "$CONF"; then
 fi
 
 /usr/sbin/chronyd -p -f "$CONF" >/dev/null
+/usr/sbin/chronyd -v | grep -Fq '+NTS'
 chronyc -n tracking >/dev/null
 
 echo "Config regression checks passed"
