@@ -11,6 +11,8 @@ readonly GPSNTP_LIBDIR="${GPSNTP_LIBDIR:-/usr/local/lib/gpsntp}"
 
 # shellcheck source=assets/lib/identity.sh
 . "${GPSNTP_LIBDIR}/identity.sh"
+# shellcheck source=assets/lib/devices.sh
+. "${GPSNTP_LIBDIR}/devices.sh"
 # shellcheck source=assets/lib/chrony-conf.sh
 . "${GPSNTP_LIBDIR}/chrony-conf.sh"
 # shellcheck source=assets/lib/gpsd-start.sh
@@ -45,7 +47,7 @@ for variable in CHRONY_UID CHRONY_GID; do
   fi
 done
 
-remap_chrony_identity
+verify_chrony_identity
 
 for variable in ENABLE_NTS ENABLE_SYSCLK NOCLIENTLOG ENABLE_GPSD_SOCK ENABLE_KERNEL_PPS ENABLE_PTP GPS_PREFER; do
   value="${!variable}"
@@ -94,21 +96,8 @@ for device in "${DEV_PPS}" "${DEV_TTY}" "${DEV_PTP}"; do
   fi
 done
 
-if [[ -z "${DEV_PPS}" && -e "/dev/${DEFAULT_PPS}" ]]; then
-  DEV_PPS="${DEFAULT_PPS}"
-  echo "Using /dev/${DEV_PPS}"
-elif [[ -n "${DEV_PPS}" && ! -e "/dev/${DEV_PPS}" ]]; then
-  echo "PPS: /dev/${DEV_PPS} does not exist"
-  exit 1
-fi
-
-if [[ -z "${DEV_TTY}" && -e "/dev/${DEFAULT_TTY}" ]]; then
-  DEV_TTY="${DEFAULT_TTY}"
-  echo "Using /dev/${DEV_TTY}"
-elif [[ -n "${DEV_TTY}" && ! -e "/dev/${DEV_TTY}" ]]; then
-  echo "TTY: /dev/${DEV_TTY} does not exist"
-  exit 1
-fi
+resolve_dev_pps
+resolve_dev_tty
 
 if [[ "${ENABLE_GPSD_SOCK}" == "true" && ( -z "${DEV_TTY}" || -z "${DEV_PPS}" ) ]]; then
   echo "ENABLE_GPSD_SOCK requires DEV_TTY and DEV_PPS" >&2
