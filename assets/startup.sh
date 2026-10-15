@@ -303,10 +303,45 @@ if [[ -n "${gpsd_socket}" ]]; then
     exit 1
   fi
 
-  # chronyd creates the SOCK as root with mode 0755. GPSD then drops to
-  # nobody in the serial device's group (usually dialout / CHRONY_GID) and
-  # cannot write samples unless the socket is group-writable.
-  chown "${CHRONY_UID}:${CHRONY_GID}" "${gpsd_socket}"
+  # chronyd creates the SOCK as root with mode 0755. GPSD drops to nobody and
+  # needs group write on the SOCK plus group access to TTY/PPS. Use Alpine's
+  # dialout group for those nodes (not CHRONY_GID, which may differ).
+  dialout_gid="$(awk -F: '$1 == "dialout" { print $3; exit }' /etc/group)"
+  if [[ -z "${dialout_gid}" ]]; then
+    echo "dialout group is required for GPSD device access" >&2
+    terminate
+    wait "${chronyd_pid}" 2>/dev/null || true
+    exit 1
+  fi
+
+  # Read-only rootfs: if nobody lacks dialout, expose membership via nss_wrapper.
+  if ! id -nG nobody | grep -qw dialout; then
+    mkdir -p /run/gpsntp
+    if [[ -z "${NSS_WRAPPER_GROUP:-}" ]]; then
+      cp /etc/passwd /run/gpsntp/passwd
+      cp /etc/group /run/gpsntp/group
+      export NSS_WRAPPER_PASSWD=/run/gpsntp/passwd
+      export NSS_WRAPPER_GROUP=/run/gpsntp/group
+      export LD_PRELOAD="/usr/lib/libnss_wrapper.so${LD_PRELOAD:+:${LD_PRELOAD}}"
+    fi
+    awk -F: -v gid="${dialout_gid}" '
+      BEGIN { OFS = FS }
+      $3 == gid {
+        if ($4 == "") { $4 = "nobody" }
+        else if ($4 !~ /(^|,)nobody(,|$)/) { $4 = $4 ",nobody" }
+      }
+      { print }
+    ' "${NSS_WRAPPER_GROUP}" > /run/gpsntp/group.gpsd
+    mv /run/gpsntp/group.gpsd "${NSS_WRAPPER_GROUP}"
+    if ! id -nG nobody | grep -qw dialout; then
+      echo "Failed to add nobody to dialout for GPSD" >&2
+      terminate
+      wait "${chronyd_pid}" 2>/dev/null || true
+      exit 1
+    fi
+  fi
+
+  chown "${CHRONY_UID}:${dialout_gid}" "${gpsd_socket}"
   chmod 660 "${gpsd_socket}"
 
   gpsd_devices=("/dev/${DEV_TTY}")
@@ -314,9 +349,9 @@ if [[ -n "${gpsd_socket}" ]]; then
     gpsd_devices+=("/dev/${DEV_PPS}")
   fi
   # Host PPS nodes are often root:root 0660 (e.g. PTP-created pps0). GPSD
-  # must open them after dropping to nobody, so align group ownership.
+  # must open them after dropping to nobody, so align group to dialout.
   for gpsd_device in "${gpsd_devices[@]}"; do
-    chown "root:${CHRONY_GID}" "${gpsd_device}"
+    chown "root:${dialout_gid}" "${gpsd_device}"
     chmod 660 "${gpsd_device}"
   done
   /usr/sbin/gpsd -nbN "${gpsd_devices[@]}" &

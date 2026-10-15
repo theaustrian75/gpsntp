@@ -31,8 +31,12 @@ RUN apk upgrade --no-cache \
     && usermod -u "${CHRONY_UID}" -g "${CHRONY_GID}" chrony \
     && test "$(id -u chrony)" = "${CHRONY_UID}" \
     && test "$(id -g chrony)" = "${CHRONY_GID}" \
+    && addgroup nobody dialout \
     && apk del .account-tools \
     && rm -f /etc/chrony/chrony.conf
+
+# GPSD drops to nobody and must open dialout-group TTY/PPS nodes and the
+# Chrony SOCK; Alpine's nobody is not in dialout by default (addgroup above).
 
 # Configure and start GPSD and chrony
 COPY --chmod=0755 assets/startup.sh /usr/local/bin/startup

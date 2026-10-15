@@ -331,8 +331,10 @@ After a few minutes the GPS SOCK source should be selected (`*`) with good
 reach. Optionally power-cycle the Pi and re-run `inspect` / `verify` at the
 saved baud to confirm the configuration persisted.
 
-Antenna sky view still dominates accuracy. Keep `CHRONY_GID=20` (`dialout`)
-when the GPS UART is group-owned by that group on the host.
+Antenna sky view still dominates accuracy. GPSD runs as `nobody` and must be
+in the container `dialout` group to open the UART/PPS nodes and Chrony SOCK
+(the image adds that membership). Keep `CHRONY_GID=20` unless you intentionally
+remap Chrony; GPSD device access always uses `dialout`, not `CHRONY_GID`.
 
 ### Log timezone
 
@@ -350,10 +352,12 @@ which matches typical serial-device group ownership. The published GHCR image
 bakes those defaults into the `chrony` account.
 
 Set `CHRONY_UID` and `CHRONY_GID` in `.env` to run as a different identity
-without rebuilding. Startup remaps the named `chrony` account at runtime via
-`nss_wrapper` (so it works with the read-only root filesystem) and owns
-runtime/state paths accordingly. Keep `CHRONY_GID=20` when the GPS serial
-device is group-owned by `dialout`.
+without rebuilding — including a host UID/GID mapping. Startup remaps the
+named `chrony` account at runtime via `nss_wrapper` (so it works with the
+read-only root filesystem) and owns Chrony runtime/state paths accordingly.
+GPSD always accesses UART/PPS/SOCK via the container `dialout` group (the
+image puts `nobody` in that group), so `CHRONY_GID` can differ from `20`
+without breaking GPS.
 
 Build arguments remain available for images that should bake a non-default
 identity as their baseline.
