@@ -34,7 +34,7 @@ jobs:
           sudo apt-get install --yes shellcheck
 
       - name: Check shell scripts
-        run: shellcheck assets/*.sh tests/*.sh scripts/check-alpine-updates.sh
+        run: shellcheck -x assets/*.sh assets/lib/*.sh tests/*.sh scripts/check-alpine-updates.sh
 
       - name: Validate Compose configuration
         run: |

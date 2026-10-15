@@ -142,10 +142,15 @@ defaults. Use a host firewall even when Chrony access is restricted.
   `ratelimit\nrtcsync`.
 - `NTP_ALLOW`: client network, `all`, or empty to disable clients; defaults
   to `all`.
-- `CHRONY_UID` / `CHRONY_GID`: numeric Chrony service identity; defaults to
-  `108:20`. Override at runtime without rebuilding the image.
-- `DEV_TTY`: GPS serial device basename; auto-detects `ttyAMA0`.
-- `DEV_PPS`: PPS device basename; auto-detects `pps0`.
+- `CHRONY_UID` / `CHRONY_GID`: numeric Chrony service identity baked into
+  the image; defaults to `108:20`. Runtime values must match; rebuild with
+  `--build-arg` to change.
+- `DEV_TTY`: GPS serial device basename; auto-detects `ttyAMA0`. Required
+  with `DEV_PPS` when GPSD SOCK or kernel PPS is enabled.
+- `DEV_PPS`: PPS device basename; auto-detects a live KPPS node when
+  present, otherwise `pps0`. Refuses `pps0` when another live `ppsN` exists
+  (common when PTP owns dead `pps0`). Required with `DEV_TTY` when GPSD
+  SOCK or kernel PPS is enabled.
 - `ENABLE_GPSD_SOCK`: use GPSD's high-precision SOCK source; defaults to
   `true`.
 - `ENABLE_KERNEL_PPS`: use direct PPS locked to GPSD NMEA instead; defaults
@@ -153,7 +158,7 @@ defaults. Use a host firewall even when Chrony access is restricted.
 - `GPS_PREFER`: prefer the selected GPS/PPS source when it agrees with the
   other sources; defaults to `true`.
 - `NMEA_OFFSET` / `NMEA_DELAY`: receiver-specific NMEA timing adjustments
-  used only in direct kernel PPS mode.
+  applied to the clk SOCK in GPSD SOCK and kernel PPS modes.
 - `ENABLE_PTP`: enable a PHC source explicitly; defaults to `false`.
 - `DEV_PTP`: PHC device basename; defaults to `ptp0`.
 - `PTP_OFFSET`: PHC-to-UTC correction in seconds; defaults to `0`.
@@ -173,17 +178,15 @@ does not accept receiver time without a current fix.
 
 ### GPS source modes
 
-The default `ENABLE_GPSD_SOCK=true` mode uses GPSD's Chrony SOCK protocol.
-With a separate KPPS device (`DEV_PPS`, e.g. GPIO `/dev/pps1` on a Pi 5),
-Chrony listens on:
+The default `ENABLE_GPSD_SOCK=true` mode uses GPSD's Chrony SOCK protocol
+and requires `DEV_TTY` plus `DEV_PPS`. Chrony listens on:
 
 - `/run/chrony.clk.<tty>.sock` — serial/NMEA second labels (`noselect`)
 - `/run/chrony.<pps>.sock` — KPPS samples from that PPS device (`prefer`)
 
-GPSD names sockets after each device basename, so listening only on
-`/run/chrony.<tty>.sock` misses GPIO PPS. On Pi hosts that also create a
-dead PTP `pps0`, gpsd's MAGIC_HAT helper may attach the tty session to
-`pps0`; feeding `/dev/<DEV_PPS>` into GPSD and creating its SOCK avoids that.
+GPSD names sockets after each device basename, so GPIO PPS must have its
+own SOCK. Startup auto-detects a live KPPS node and refuses `DEV_PPS=pps0`
+when another live `ppsN` exists (PTP often owns dead `pps0` on Pi 5).
 
 For direct kernel PPS instead of GPSD's PPS SOCK, set:
 
@@ -343,8 +346,8 @@ saved baud to confirm the configuration persisted.
 
 Antenna sky view still dominates accuracy. GPSD runs as `nobody` and must be
 in the container `dialout` group to open the UART/PPS nodes and Chrony SOCK
-(the image adds that membership). Keep `CHRONY_GID=20` unless you intentionally
-remap Chrony; GPSD device access always uses `dialout`, not `CHRONY_GID`.
+(the image adds that membership). GPSD device access always uses `dialout`,
+not `CHRONY_GID`.
 
 ### Log timezone
 
@@ -361,16 +364,17 @@ The image defaults to UID 108 and GID 20. Alpine assigns GID 20 to `dialout`,
 which matches typical serial-device group ownership. The published GHCR image
 bakes those defaults into the `chrony` account.
 
-Set `CHRONY_UID` and `CHRONY_GID` in `.env` to run as a different identity
-without rebuilding — including a host UID/GID mapping. Startup remaps the
-named `chrony` account at runtime via `nss_wrapper` (so it works with the
-read-only root filesystem) and owns Chrony runtime/state paths accordingly.
-GPSD always accesses UART/PPS/SOCK via the container `dialout` group (the
-image puts `nobody` in that group), so `CHRONY_GID` can differ from `20`
-without breaking GPS.
+`CHRONY_UID` / `CHRONY_GID` in `.env` must match that baked account. To use a
+host UID/GID mapping, rebuild:
 
-Build arguments remain available for images that should bake a non-default
-identity as their baseline.
+```bash
+docker build --build-arg CHRONY_UID=10010 --build-arg CHRONY_GID=10010 \
+  --tag gpsntp:custom --file Dockerfile.gpsntp .
+```
+
+Then set the same values in `.env`. GPSD always accesses UART/PPS/SOCK via
+the container `dialout` group (the image puts `nobody` in that group), so
+`CHRONY_GID` need not be `20` for GPS to work.
 
 ## Health check
 

@@ -18,7 +18,6 @@ RUN apk upgrade --no-cache \
         chrony \
         gpsd \
         gpsd-clients \
-        nss_wrapper \
         pps-tools \
         py3-gpsd \
         py3-pyserial \
@@ -40,6 +39,7 @@ RUN apk upgrade --no-cache \
 
 # Configure and start GPSD and chrony
 COPY --chmod=0755 assets/startup.sh /usr/local/bin/startup
+COPY assets/lib /usr/local/lib/gpsntp
 COPY --chmod=0755 assets/ublox-config.sh /usr/local/bin/ublox-config
 
 # NTP port
