@@ -142,9 +142,8 @@ defaults. Use a host firewall even when Chrony access is restricted.
   `ratelimit\nrtcsync`.
 - `NTP_ALLOW`: client network, `all`, or empty to disable clients; defaults
   to `all`.
-- `CHRONY_UID` / `CHRONY_GID`: numeric Chrony service identity baked into
-  the image; defaults to `108:20`. Runtime values must match; rebuild with
-  `--build-arg` to change.
+- `CHRONY_UID` / `CHRONY_GID`: numeric Chrony service identity; defaults to
+  `108:20`. Override at runtime without rebuilding (host UID/GID mapping).
 - `DEV_TTY`: GPS serial device basename; auto-detects `ttyAMA0`. Required
   with `DEV_PPS` when GPSD SOCK or kernel PPS is enabled.
 - `DEV_PPS`: PPS device basename; auto-detects a live KPPS node when
@@ -364,17 +363,16 @@ The image defaults to UID 108 and GID 20. Alpine assigns GID 20 to `dialout`,
 which matches typical serial-device group ownership. The published GHCR image
 bakes those defaults into the `chrony` account.
 
-`CHRONY_UID` / `CHRONY_GID` in `.env` must match that baked account. To use a
-host UID/GID mapping, rebuild:
+Set `CHRONY_UID` and `CHRONY_GID` in `.env` to run as a different identity
+without rebuilding — including a host UID/GID mapping. Startup remaps the
+named `chrony` account at runtime via `nss_wrapper` (so it works with the
+read-only root filesystem) and owns Chrony runtime/state paths accordingly.
+GPSD always accesses UART/PPS/SOCK via the container `dialout` group (the
+image puts `nobody` in that group), so `CHRONY_GID` can differ from `20`
+without breaking GPS.
 
-```bash
-docker build --build-arg CHRONY_UID=10010 --build-arg CHRONY_GID=10010 \
-  --tag gpsntp:custom --file Dockerfile.gpsntp .
-```
-
-Then set the same values in `.env`. GPSD always accesses UART/PPS/SOCK via
-the container `dialout` group (the image puts `nobody` in that group), so
-`CHRONY_GID` need not be `20` for GPS to work.
+Build arguments remain available for images that should bake a non-default
+identity as their baseline.
 
 ## Health check
 

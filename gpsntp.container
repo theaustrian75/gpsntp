@@ -16,8 +16,8 @@ Conflicts=systemd-timesyncd.service chronyd.service ntp.service ntpd.service ope
 # Replace with an immutable release tag or manifest digest before installing.
 Image=ghcr.io/theaustrian75/gpsntp@sha256:REPLACE_WITH_MANIFEST_DIGEST
 ContainerName=gpsntp
-# CHRONY_UID/GID must match the image-baked chrony account (rebuild to
-# change). GPSD uses container dialout for UART/PPS/SOCK.
+# Entrypoint remaps chrony via nss_wrapper when CHRONY_UID/GID differ from
+# the image. GPSD uses container dialout for UART/PPS/SOCK.
 Environment=NTP_SERVERS=0.pool.ntp.org,1.pool.ntp.org,2.pool.ntp.org,3.pool.ntp.org
 Environment=NTP_SOURCE_TYPE=pool
 Environment=NTP_ALLOW=all

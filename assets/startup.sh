@@ -47,7 +47,7 @@ for variable in CHRONY_UID CHRONY_GID; do
   fi
 done
 
-verify_chrony_identity
+remap_chrony_identity
 
 for variable in ENABLE_NTS ENABLE_SYSCLK NOCLIENTLOG ENABLE_GPSD_SOCK ENABLE_KERNEL_PPS ENABLE_PTP GPS_PREFER; do
   value="${!variable}"

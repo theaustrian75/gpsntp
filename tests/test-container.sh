@@ -4,8 +4,8 @@ set -eu
 
 IMAGE="${1:?Usage: tests/test-container.sh IMAGE}"
 CONTAINER="gpsntp-test-$$"
-IMAGE_UID=108
-IMAGE_GID=20
+RUNTIME_UID=110
+RUNTIME_GID=20
 
 # Invoked through trap.
 # shellcheck disable=SC2317
@@ -16,8 +16,8 @@ trap cleanup EXIT INT TERM
 
 default_settings=$(docker run --rm --entrypoint /bin/sh "$IMAGE" \
   -c 'printf "%s:%s %s" "$(id -u chrony)" "$(id -g chrony)" "$TZ"')
-if [ "$default_settings" != "${IMAGE_UID}:${IMAGE_GID} America/New_York" ]; then
-  echo "Expected defaults '${IMAGE_UID}:${IMAGE_GID} America/New_York', got '$default_settings'" >&2
+if [ "$default_settings" != "108:20 America/New_York" ]; then
+  echo "Expected defaults '108:20 America/New_York', got '$default_settings'" >&2
   exit 1
 fi
 
@@ -42,8 +42,8 @@ assert_failure "CHRONY_UID must be a non-zero numeric ID" \
   -e ENABLE_GPSD_SOCK=false -e ENABLE_KERNEL_PPS=false -e ENABLE_PTP=false \
   "$IMAGE"
 
-assert_failure "must match the image chrony account" \
-  docker run --rm -e CHRONY_UID=110 \
+assert_failure "CHRONY_UID 1 is already used by another account" \
+  docker run --rm -e CHRONY_UID=1 \
   -e ENABLE_GPSD_SOCK=false -e ENABLE_KERNEL_PPS=false -e ENABLE_PTP=false \
   "$IMAGE"
 
@@ -103,7 +103,7 @@ assert_failure "Invalid NTP_ALLOW network" \
   "$IMAGE"
 
 # Exercise production-like read-only/tmpfs constraints and a dropped capability
-# set. Chrony identity must match the image-baked account.
+# set. Remap Chrony away from the image default to verify runtime identity.
 docker run -d --name "$CONTAINER" \
   --read-only \
   --security-opt no-new-privileges:true \
@@ -120,8 +120,8 @@ docker run -d --name "$CONTAINER" \
   --tmpfs /run:rw,mode=0755 \
   --tmpfs /var/lib/chrony:rw,mode=0755 \
   -v "$PWD/tests/test-config.sh:/tests/test-config.sh:ro" \
-  -e CHRONY_UID="$IMAGE_UID" \
-  -e CHRONY_GID="$IMAGE_GID" \
+  -e CHRONY_UID="$RUNTIME_UID" \
+  -e CHRONY_GID="$RUNTIME_GID" \
   -e ENABLE_GPSD_SOCK=false \
   -e ENABLE_KERNEL_PPS=false \
   -e ENABLE_PTP=false \
@@ -142,14 +142,16 @@ while [ "$attempt" -lt 30 ]; do
   case "$status" in
     running)
       if docker exec "$CONTAINER" chronyc -n tracking >/dev/null 2>&1; then
+        # Resolve the running chronyd credentials; docker exec does not inherit
+        # the startup LD_PRELOAD used for passwd remapping.
         runtime_settings=$(docker exec "$CONTAINER" /bin/sh -c '
           pid=$(pidof chronyd) || exit 1
           uid=$(awk "/^Uid:/{print \$2; exit}" /proc/"$pid"/status)
           gid=$(awk "/^Gid:/{print \$2; exit}" /proc/"$pid"/status)
           printf "%s:%s" "$uid" "$gid"
         ')
-        if [ "$runtime_settings" != "${IMAGE_UID}:${IMAGE_GID}" ]; then
-          echo "Expected chronyd identity '${IMAGE_UID}:${IMAGE_GID}', got '${runtime_settings}'" >&2
+        if [ "$runtime_settings" != "${RUNTIME_UID}:${RUNTIME_GID}" ]; then
+          echo "Expected chronyd identity '${RUNTIME_UID}:${RUNTIME_GID}', got '${runtime_settings}'" >&2
           docker logs "$CONTAINER" >&2
           exit 1
         fi
