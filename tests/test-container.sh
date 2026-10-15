@@ -114,6 +114,7 @@ docker run -d --name "$CONTAINER" \
   --cap-add SETGID \
   --cap-add NET_BIND_SERVICE \
   --cap-add DAC_OVERRIDE \
+  --cap-add IPC_LOCK \
   --pids-limit 128 --memory 256m \
   --tmpfs /etc/chrony:rw,mode=1750 \
   --tmpfs /run:rw,mode=0755 \

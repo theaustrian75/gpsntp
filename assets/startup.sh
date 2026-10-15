@@ -303,10 +303,22 @@ if [[ -n "${gpsd_socket}" ]]; then
     exit 1
   fi
 
+  # chronyd creates the SOCK as root with mode 0755. GPSD then drops to
+  # nobody in the serial device's group (usually dialout / CHRONY_GID) and
+  # cannot write samples unless the socket is group-writable.
+  chown "${CHRONY_UID}:${CHRONY_GID}" "${gpsd_socket}"
+  chmod 660 "${gpsd_socket}"
+
   gpsd_devices=("/dev/${DEV_TTY}")
   if [[ "${ENABLE_GPSD_SOCK}" == "true" && -n "${DEV_PPS}" ]]; then
     gpsd_devices+=("/dev/${DEV_PPS}")
   fi
+  # Host PPS nodes are often root:root 0660 (e.g. PTP-created pps0). GPSD
+  # must open them after dropping to nobody, so align group ownership.
+  for gpsd_device in "${gpsd_devices[@]}"; do
+    chown "root:${CHRONY_GID}" "${gpsd_device}"
+    chmod 660 "${gpsd_device}"
+  done
   /usr/sbin/gpsd -nbN "${gpsd_devices[@]}" &
   pids+=("$!")
 fi
