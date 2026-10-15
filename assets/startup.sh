@@ -208,24 +208,39 @@ for server in "${ntp_servers[@]}"; do
 done
 
 # Set up GPS time sources
-# Prefer GPSD's SOCK source, which can apply receiver-specific PPS corrections.
-# Direct kernel PPS is an alternative and is locked to GPSD's NMEA source.
-gpsd_socket=""
+# GPSD SOCK: each device basename gets its own chrony socket (see gpsd
+# timehint.c). A GPIO KPPS device (/dev/ppsN) feeds /run/chrony.ppsN.sock,
+# while serial message time feeds /run/chrony.clk.<tty>.sock. Listening only
+# on /run/chrony.<tty>.sock misses GPIO PPS — and on Pi 5, gpsd's MAGIC_HAT
+# may attach the tty session to the first PPS node (often a dead PTP pps0).
+# Direct kernel PPS is an alternative locked to GPSD's NMEA clk socket.
+gpsd_sockets=()
 if [[ "${ENABLE_GPSD_SOCK}" == "true" ]]; then
-  gpsd_socket="/run/chrony.${DEV_TTY}.sock"
-  gps_options=(refid GPS precision 1e-7 poll 0)
-  if [[ "${GPS_PREFER}" == "true" ]]; then
-    gps_options+=(prefer)
+  if [[ -n "${DEV_PPS}" ]]; then
+    echo "refclock SOCK /run/chrony.clk.${DEV_TTY}.sock offset ${NMEA_OFFSET} delay ${NMEA_DELAY} refid NMEA poll 0 noselect" >> "${CHRONY_CONF_FILE}"
+    pps_sock_options=(refid PPS precision 1e-7 poll 0)
+    if [[ "${GPS_PREFER}" == "true" ]]; then
+      pps_sock_options+=(prefer)
+    fi
+    echo "refclock SOCK /run/chrony.${DEV_PPS}.sock ${pps_sock_options[*]}" >> "${CHRONY_CONF_FILE}"
+    gpsd_sockets+=("/run/chrony.clk.${DEV_TTY}.sock" "/run/chrony.${DEV_PPS}.sock")
+  else
+    # Serial-line PPS (CD/RI) or MAGIC_HAT KPPS associated with the tty.
+    gps_options=(refid GPS precision 1e-7 poll 0)
+    if [[ "${GPS_PREFER}" == "true" ]]; then
+      gps_options+=(prefer)
+    fi
+    echo "refclock SOCK /run/chrony.${DEV_TTY}.sock ${gps_options[*]}" >> "${CHRONY_CONF_FILE}"
+    gpsd_sockets+=("/run/chrony.${DEV_TTY}.sock")
   fi
-  echo "refclock SOCK ${gpsd_socket} ${gps_options[*]}" >> "${CHRONY_CONF_FILE}"
 elif [[ "${ENABLE_KERNEL_PPS}" == "true" ]]; then
-  gpsd_socket="/run/chrony.clk.${DEV_TTY}.sock"
-  echo "refclock SOCK ${gpsd_socket} offset ${NMEA_OFFSET} delay ${NMEA_DELAY} refid NMEA poll 0 noselect" >> "${CHRONY_CONF_FILE}"
+  echo "refclock SOCK /run/chrony.clk.${DEV_TTY}.sock offset ${NMEA_OFFSET} delay ${NMEA_DELAY} refid NMEA poll 0 noselect" >> "${CHRONY_CONF_FILE}"
   pps_options=(lock NMEA refid PPS precision 1e-7 poll 0)
   if [[ "${GPS_PREFER}" == "true" ]]; then
     pps_options+=(prefer)
   fi
   echo "refclock PPS /dev/${DEV_PPS} ${pps_options[*]}" >> "${CHRONY_CONF_FILE}"
+  gpsd_sockets+=("/run/chrony.clk.${DEV_TTY}.sock")
 fi
 
 # PTP is opt-in because an arbitrary PHC may be free-running or use TAI.
@@ -285,25 +300,27 @@ TZ=UTC /usr/sbin/chronyd "${chronyd_args[@]}" &
 chronyd_pid="$!"
 pids+=("${chronyd_pid}")
 
-if [[ -n "${gpsd_socket}" ]]; then
-  for _ in {1..50}; do
-    [[ -S "${gpsd_socket}" ]] && break
-    if ! kill -0 "${chronyd_pid}" 2>/dev/null; then
-      wait "${chronyd_pid}" || true
-      echo "chronyd exited before creating ${gpsd_socket}" >&2
+if (( ${#gpsd_sockets[@]} > 0 )); then
+  for gpsd_socket in "${gpsd_sockets[@]}"; do
+    for _ in {1..50}; do
+      [[ -S "${gpsd_socket}" ]] && break
+      if ! kill -0 "${chronyd_pid}" 2>/dev/null; then
+        wait "${chronyd_pid}" || true
+        echo "chronyd exited before creating ${gpsd_socket}" >&2
+        exit 1
+      fi
+      sleep 0.1
+    done
+
+    if [[ ! -S "${gpsd_socket}" ]]; then
+      echo "chronyd did not create ${gpsd_socket}" >&2
+      terminate
+      wait "${chronyd_pid}" 2>/dev/null || true
       exit 1
     fi
-    sleep 0.1
   done
 
-  if [[ ! -S "${gpsd_socket}" ]]; then
-    echo "chronyd did not create ${gpsd_socket}" >&2
-    terminate
-    wait "${chronyd_pid}" 2>/dev/null || true
-    exit 1
-  fi
-
-  # chronyd creates the SOCK as root with mode 0755. GPSD drops to nobody and
+  # chronyd creates SOCK nodes as root with mode 0755. GPSD drops to nobody and
   # needs group write on the SOCK plus group access to TTY/PPS. Use Alpine's
   # dialout group for those nodes (not CHRONY_GID, which may differ).
   dialout_gid="$(awk -F: '$1 == "dialout" { print $3; exit }' /etc/group)"
@@ -341,8 +358,10 @@ if [[ -n "${gpsd_socket}" ]]; then
     fi
   fi
 
-  chown "${CHRONY_UID}:${dialout_gid}" "${gpsd_socket}"
-  chmod 660 "${gpsd_socket}"
+  for gpsd_socket in "${gpsd_sockets[@]}"; do
+    chown "${CHRONY_UID}:${dialout_gid}" "${gpsd_socket}"
+    chmod 660 "${gpsd_socket}"
+  done
 
   gpsd_devices=("/dev/${DEV_TTY}")
   if [[ "${ENABLE_GPSD_SOCK}" == "true" && -n "${DEV_PPS}" ]]; then

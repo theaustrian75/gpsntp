@@ -173,11 +173,19 @@ does not accept receiver time without a current fix.
 
 ### GPS source modes
 
-The default `ENABLE_GPSD_SOCK=true` mode lets GPSD provide the corrected PPS
-sample through `/run/chrony.<tty>.sock`. This avoids duplicate correlated PPS,
-SHM, and SOCK sources.
+The default `ENABLE_GPSD_SOCK=true` mode uses GPSD's Chrony SOCK protocol.
+With a separate KPPS device (`DEV_PPS`, e.g. GPIO `/dev/pps1` on a Pi 5),
+Chrony listens on:
 
-For direct kernel PPS, set:
+- `/run/chrony.clk.<tty>.sock` — serial/NMEA second labels (`noselect`)
+- `/run/chrony.<pps>.sock` — KPPS samples from that PPS device (`prefer`)
+
+GPSD names sockets after each device basename, so listening only on
+`/run/chrony.<tty>.sock` misses GPIO PPS. On Pi hosts that also create a
+dead PTP `pps0`, gpsd's MAGIC_HAT helper may attach the tty session to
+`pps0`; feeding `/dev/<DEV_PPS>` into GPSD and creating its SOCK avoids that.
+
+For direct kernel PPS instead of GPSD's PPS SOCK, set:
 
 ```dotenv
 ENABLE_GPSD_SOCK=false
@@ -195,12 +203,14 @@ use TAI rather than UTC. Add its device mapping to Compose, set
 
 The default mode is optimized for u-blox receivers with a 1 Hz timepulse:
 
-- GPSD's SOCK source is processed every second with `poll 0`.
-- The GPS source is marked `prefer`, but not `trust`, so Chrony can still
-  reject it when it disagrees with other sources.
+- The KPPS SOCK (`/run/chrony.<pps>.sock`) is processed every second with
+  `poll 0` and marked `prefer` (not `trust`) so Chrony can still reject it
+  when it disagrees with other sources.
+- Serial/NMEA time is fed on `/run/chrony.clk.<tty>.sock` as `noselect` for
+  second identification.
 - GPSD can use u-blox timing information, including sawtooth correction when
   the receiver and firmware provide it through supported UBX messages.
-- Direct PPS mode locks the kernel PPS device to u-blox NMEA time, avoiding
+- Direct kernel PPS mode locks `/dev/<DEV_PPS>` to u-blox NMEA time, avoiding
   whole-second ambiguity.
 
 GPSD runs with `-nbN`. The `-b` option deliberately prevents it from changing
