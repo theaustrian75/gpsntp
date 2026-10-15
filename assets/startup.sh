@@ -313,6 +313,12 @@ if [[ -n "${gpsd_socket}" ]]; then
   if [[ "${ENABLE_GPSD_SOCK}" == "true" && -n "${DEV_PPS}" ]]; then
     gpsd_devices+=("/dev/${DEV_PPS}")
   fi
+  # Host PPS nodes are often root:root 0660 (e.g. PTP-created pps0). GPSD
+  # must open them after dropping to nobody, so align group ownership.
+  for gpsd_device in "${gpsd_devices[@]}"; do
+    chown "root:${CHRONY_GID}" "${gpsd_device}"
+    chmod 660 "${gpsd_device}"
+  done
   /usr/sbin/gpsd -nbN "${gpsd_devices[@]}" &
   pids+=("$!")
 fi
